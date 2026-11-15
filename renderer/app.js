@@ -53,9 +53,7 @@
     if (state === 'idle') window.Avatar?.setMood('neutral');
   }, ms);
 
-  // =====================================================================
-  //  MANAJEMEN BUBBLE CHAT
-  // =====================================================================
+  // Bubble UI
   const Bubble = {
     user(text) {
       userTxt.textContent = text;
@@ -153,9 +151,7 @@
   const addSys = (text, ms) => Bubble.note(text, ms);
   const addError = text => Bubble.error(text);
 
-  // =====================================================================
-  //  SUARA KELUAR (Streaming Edge Neural TTS + Sinkronisasi Visor Equalizer)
-  // =====================================================================
+  // Audio Output (Edge TTS & Equalizer)
   const Speaker = (() => {
     let epoch = 0;
     let ctx = null;
@@ -189,14 +185,13 @@
       window.Avatar?.setMouth(0);
     }
 
-    // Fallback: Suara bawaan sistem operasi (SpeechSynthesis)
     function utter(text) {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = cfg.voiceLang || 'id-ID';
       const v = findVoice();
       if (v) u.voice = v;
-      u.rate = 1.05;
-      u.pitch = 1.08;
+      u.rate = 1.25;
+      u.pitch = 1.05;
       const done = new Promise(res => {
         u.onstart = () => { if (sysSpeaking++ === 0) mouthStart(); };
         u.onend = u.onerror = () => { if (--sysSpeaking <= 0) { sysSpeaking = 0; mouthStop(); } res(); };
@@ -205,7 +200,6 @@
       return done;
     }
 
-    // Suara utama: Edge Neural TTS (Indonesia Gadis/Ardi) via AudioContext
     const b64ToBytes = b64 => {
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);
@@ -316,17 +310,38 @@
           pending += delta;
 
           let end = lastBoundary(pending);
-          if (end <= 0 && !firstDone && pending.length >= 15 && /[.!?…]["')\]]?$/.test(pending)) {
-            end = pending.length;
+
+          // Potong awal agar audio langsung mulai paralel dengan streaming teks
+          if (!firstDone) {
+            if (end <= 0 && pending.length >= 6 && /[.!?…,:;]["')\]]?$/.test(pending)) {
+              end = pending.length;
+            }
+            if (end <= 0) {
+              const earlyPunct = pending.search(/[.!?…,:;]\s/);
+              if (earlyPunct >= 5) {
+                end = earlyPunct + 1;
+              }
+            }
           }
+
           if (end > 0) {
             enqueue(pending.slice(0, end));
             pending = pending.slice(end);
             return;
           }
-          if (!firstDone && pending.length >= 45) {
+
+          if (!firstDone && pending.length >= 18) {
             const cut = Math.max(pending.lastIndexOf(','), pending.lastIndexOf(' '));
-            if (cut >= 25) {
+            if (cut >= 10) {
+              enqueue(pending.slice(0, cut + 1));
+              pending = pending.slice(cut + 1);
+              return;
+            }
+          }
+
+          if (firstDone && pending.length >= 85) {
+            const cut = Math.max(pending.lastIndexOf(','), pending.lastIndexOf(';'), pending.lastIndexOf(' '));
+            if (cut >= 40) {
               enqueue(pending.slice(0, cut + 1));
               pending = pending.slice(cut + 1);
             }
@@ -348,9 +363,7 @@
     return { start, stop };
   })();
 
-  // =====================================================================
-  //  SUARA MASUK (Web Audio RMS VAD -> WAV 16 kHz)
-  // =====================================================================
+  // Audio Input (Web Audio VAD -> 16kHz WAV)
   async function recordUtterance() {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
@@ -457,9 +470,7 @@
     return btoa(bin);
   }
 
-  // =====================================================================
-  //  ALUR UTAMA (RESPON & STREAMING)
-  // =====================================================================
+  // Main Interaction Loop
   function abortCurrent() {
     turn++;
     Speaker.stop();
@@ -590,13 +601,10 @@
       addSys('Dibatalkan.', 2500);
       return;
     }
-    // Jika sedang speaking, langsung dipotong (barge-in)
     startListening();
   }
 
-  // =====================================================================
-  //  AGEN LATAR BELAKANG (CHIPS & NOTIFIKASI)
-  // =====================================================================
+  // Background Agent Chips
   const chips = new Map();
 
   function addChip(id, title) {
@@ -659,9 +667,7 @@
     if (!ev.ok) Bubble.error(`Gagal menjalankan aksi: ${ev.error}`, 8000);
   });
 
-  // =====================================================================
-  //  KONTROL TOOLBAR & INTERAKSI
-  // =====================================================================
+  // Controls & Toolbar
   stage.addEventListener('click', toggleListening);
   btnMic.addEventListener('click', toggleListening);
   api.onHotkey(toggleListening);
@@ -729,7 +735,7 @@
   btnHide.addEventListener('click', () => api.hide());
   btnQuit.addEventListener('click', () => api.quit());
 
-  // Mouse Passthrough (Area transparan tembus klik ke window di bawahnya)
+  // Mouse Passthrough & Gaze Tracking
   let ignoring = null;
   const setIgnore = v => {
     if (ignoring !== v) {
@@ -741,7 +747,6 @@
   window.addEventListener('mousemove', e => {
     setIgnore(!e.target.closest('.interactive, .bub, .chip'));
 
-    // Gaze / Look tracking untuk Avatar Drone
     if (window.Avatar?.setLook) {
       const rect = stage.getBoundingClientRect();
       const droneCenterX = rect.left + rect.width / 2;
@@ -758,9 +763,7 @@
   });
   setIgnore(true);
 
-  // =====================================================================
-  //  SAPAAN AWAL
-  // =====================================================================
+  // Greeting
   if (!cfg.hasKey) {
     setState('error');
     window.Avatar?.setMood('sad');

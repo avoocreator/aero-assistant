@@ -46,9 +46,7 @@ html, body {
   pointer-events: auto;
 }
 
-/* =====================================================================
-   AREA BUBBLE CHAT
-   ===================================================================== */
+/* Bubbles */
 #bubbles {
   flex: 1 1 auto;
   min-height: 0;
@@ -87,7 +85,6 @@ html, body {
   }
 }
 
-/* Bubble Pengguna (User) */
 .bub.user {
   align-self: flex-end;
   background: var(--bg-user);
@@ -106,7 +103,6 @@ html, body {
   letter-spacing: 0.04em;
 }
 
-/* Bubble Asisten (Aero / Antigravity) */
 .bub.aero {
   align-self: center;
   background: var(--bg-panel);
@@ -116,7 +112,6 @@ html, body {
   width: 100%;
 }
 
-/* Ekor Bubble yang menunjuk ke Avatar Drone di bawah */
 .bub.aero::after {
   content: "";
   position: absolute;
@@ -187,7 +182,6 @@ html, body {
   background: var(--accent-cyan);
 }
 
-/* Teks Berjalan / Cursor Typing */
 .caret::after {
   content: "▋";
   display: inline-block;
@@ -202,7 +196,6 @@ html, body {
   50% { opacity: 0; }
 }
 
-/* Animasi Berpikir (Glowing Pulse Dots) */
 .pdots {
   display: inline-flex;
   gap: 7px;
@@ -232,7 +225,6 @@ html, body {
   }
 }
 
-/* Bagian Detail / Collapsible */
 .bub .extra {
   margin-top: 6px;
 }
@@ -266,9 +258,7 @@ html, body {
   font-family: Consolas, monospace;
 }
 
-/* =====================================================================
-   TUGAS LATAR BELAKANG (CHIPS AGEN ANTIGRAVITY)
-   ===================================================================== */
+/* Background Tasks */
 #tasks {
   display: flex;
   flex-wrap: wrap;
@@ -329,9 +319,7 @@ html, body {
   }
 }
 
-/* =====================================================================
-   PANGGUNG AVATAR
-   ===================================================================== */
+/* Stage & Avatar */
 #stage {
   align-self: center;
   display: flex;
@@ -370,9 +358,7 @@ body[data-state="thinking"] #stateLabel { color: var(--accent-purple); }
 body[data-state="speaking"] #stateLabel { color: var(--accent-magenta); }
 body[data-state="error"] #stateLabel { color: var(--accent-alert); }
 
-/* =====================================================================
-   TOOLBAR KONTROL MENGAMBANG
-   ===================================================================== */
+/* Toolbar */
 #toolbar {
   align-self: center;
   display: flex;
@@ -435,9 +421,7 @@ body[data-state="error"] #stateLabel { color: var(--accent-alert); }
   filter: grayscale(1);
 }
 
-/* =====================================================================
-   FORM INPUT TEKS
-   ===================================================================== */
+/* Input Form */
 #typeForm {
   display: flex;
   align-items: center;

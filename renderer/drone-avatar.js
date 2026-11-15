@@ -1,31 +1,27 @@
-// Drone Avatar: Procedural Sci-Fi Drone Companion di Canvas
-// Menghasilkan companion drone mengambang dengan efek neon glow, thruster partikel,
-// cincin orbit holografik, dan sensor visor yang reaktif terhadap suara dan status.
+// Procedural Sci-Fi Drone Avatar (Canvas 60 FPS)
 const DroneAvatar = (() => {
   const cv = document.getElementById('avatar');
   const g = cv.getContext('2d');
   const W = cv.width, H = cv.height;
 
-  // Warna Palet Cyber Sci-Fi
   const PALETTE = {
     hullDark: '#12151e',
     hullMid: '#1e2433',
     hullLight: '#2f3b52',
     hullRim: '#4a5b7d',
     glassBase: '#0a0d14',
-    accentIdle: '#00e5ff',      // Cyan futuristik
-    accentListening: '#00ffa3', // Emerald sinyal
-    accentThinking: '#b388ff',  // Violet plasma
-    accentSpeaking: '#ff3388',  // Neon magenta audio wave
-    accentError: '#ff3366',     // Crimson alert
+    accentIdle: '#00e5ff',
+    accentListening: '#00ffa3',
+    accentThinking: '#b388ff',
+    accentSpeaking: '#ff3388',
+    accentError: '#ff3366',
     flameInner: '#ffffff',
     shadow: 'rgba(0, 0, 0, 0.45)'
   };
 
   let mood = 'neutral';
-  let mouthOpen = 0;       // 0..1 untuk modulasi equalizer visor
+  let mouthOpen = 0;
   let blink = false;
-  let blinkTimer = 0;
   let nextBlink = performance.now() + 2500;
   const look = { x: 0, y: 0 };
   let orbitAngle = 0;
@@ -57,7 +53,7 @@ const DroneAvatar = (() => {
     const state = document.body.dataset.state || 'idle';
     const accent = getAccentColor(state);
 
-    // Kedipan mata natural
+    // Natural eye blink timer
     if (now > nextBlink) {
       blink = true;
       if (now > nextBlink + 140) {
@@ -66,7 +62,7 @@ const DroneAvatar = (() => {
       }
     }
 
-    // Fisika mengambang (Hovering Float)
+    // Hover float physics
     const hoverSpeed = state === 'speaking' ? 0.007 : state === 'listening' ? 0.004 : 0.003;
     const hoverY = Math.sin(now * hoverSpeed) * 3.5;
     const tilt = Math.cos(now * hoverSpeed * 0.8) * 0.04 + (look.x * 0.06);
@@ -79,7 +75,7 @@ const DroneAvatar = (() => {
     const cx = W / 2;
     const cy = (H / 2) + hoverY - 2;
 
-    // --- 1. Bayangan di Bawah Drone ---
+    // Shadow
     const shadowScale = 1 - (hoverY / 18);
     g.save();
     g.beginPath();
@@ -90,11 +86,10 @@ const DroneAvatar = (() => {
     g.filter = 'none';
     g.restore();
 
-    // Transformasi Drone (pusat di cx, cy)
     g.translate(cx, cy);
     g.rotate(tilt);
 
-    // --- 2. Cincin Partikel / Orbit Holografik Belakang ---
+    // Holographic Orbit Ring (Back Arc)
     g.save();
     g.scale(1, 0.42);
     g.beginPath();
@@ -107,12 +102,11 @@ const DroneAvatar = (() => {
     g.stroke();
     g.restore();
 
-    // --- 3. Thruster Samping Kiri & Kanan ---
-    const drawThruster = (tx, ty, isLeft) => {
+    // Side Thrusters
+    const drawThruster = (tx, ty) => {
       g.save();
       g.translate(tx, ty);
 
-      // Api Plasma Gravitasi (Bawah Thruster)
       const flameLen = 6 + Math.random() * 4 + (state === 'thinking' || state === 'speaking' ? 3 : 0);
       const flameGrad = g.createLinearGradient(0, 8, 0, 8 + flameLen);
       flameGrad.addColorStop(0, PALETTE.flameInner);
@@ -129,7 +123,6 @@ const DroneAvatar = (() => {
       g.shadowBlur = 8;
       g.fill();
 
-      // Pod Fisik Thruster
       g.beginPath();
       g.roundRect(-4, -6, 8, 14, 4);
       g.fillStyle = PALETTE.hullMid;
@@ -138,7 +131,6 @@ const DroneAvatar = (() => {
       g.lineWidth = 1.2;
       g.stroke();
 
-      // Celah Lampu Thruster
       g.beginPath();
       g.roundRect(-2.5, -1, 5, 2.5, 1);
       g.fillStyle = accent;
@@ -149,10 +141,10 @@ const DroneAvatar = (() => {
       g.restore();
     };
 
-    drawThruster(-24, 2, true);
-    drawThruster(24, 2, false);
+    drawThruster(-24, 2);
+    drawThruster(24, 2);
 
-    // Sayap Penyambung Thruster ke Bodi
+    // Thruster mount strut
     g.beginPath();
     g.moveTo(-22, 2);
     g.lineTo(22, 2);
@@ -160,8 +152,7 @@ const DroneAvatar = (() => {
     g.lineWidth = 3.5;
     g.stroke();
 
-    // --- 4. Bodi Utama Drone (Aerodynamic Pod) ---
-    // Cangkang Luar
+    // Drone Hull
     g.beginPath();
     g.roundRect(-19, -17, 38, 34, [16, 16, 12, 12]);
     const bodyGrad = g.createLinearGradient(-19, -17, 19, 17);
@@ -174,7 +165,7 @@ const DroneAvatar = (() => {
     g.lineWidth = 1.8;
     g.stroke();
 
-    // Antena Komunikasi di Atas
+    // Antenna & Signal Beacon
     g.beginPath();
     g.moveTo(0, -17);
     g.lineTo(0, -25);
@@ -182,7 +173,6 @@ const DroneAvatar = (() => {
     g.lineWidth = 2;
     g.stroke();
 
-    // Ujung Antena (Beacon)
     g.beginPath();
     g.arc(0, -26, 2.5, 0, Math.PI * 2);
     g.fillStyle = state === 'listening' ? PALETTE.accentListening : accent;
@@ -191,7 +181,6 @@ const DroneAvatar = (() => {
     g.fill();
     g.shadowBlur = 0;
 
-    // Sinyal berdenyut dari antena kalau sedang mendengarkan
     if (state === 'listening') {
       const p = (now % 1000) / 1000;
       g.beginPath();
@@ -201,7 +190,7 @@ const DroneAvatar = (() => {
       g.stroke();
     }
 
-    // --- 5. Visor Kaca Sensor (Layar Hitam Lengkung) ---
+    // Visor Glass
     g.beginPath();
     g.roundRect(-14, -8, 28, 18, 7);
     g.fillStyle = PALETTE.glassBase;
@@ -210,7 +199,6 @@ const DroneAvatar = (() => {
     g.lineWidth = 1.2;
     g.stroke();
 
-    // Pantulan Kilau Kaca (Specular Highlight)
     g.beginPath();
     g.moveTo(-11, -6);
     g.lineTo(5, -6);
@@ -218,7 +206,7 @@ const DroneAvatar = (() => {
     g.lineWidth = 1.5;
     g.stroke();
 
-    // --- 6. Mata / Sensor Display Digital di Dalam Visor ---
+    // Visor Eye States
     const eyeX = look.x * 2.5;
     const eyeY = look.y * 1.5;
 
@@ -226,7 +214,6 @@ const DroneAvatar = (() => {
     g.translate(eyeX, eyeY);
 
     if (blink && state !== 'speaking') {
-      // Garis kedipan
       g.beginPath();
       g.moveTo(-8, 1);
       g.lineTo(-2, 1);
@@ -238,7 +225,6 @@ const DroneAvatar = (() => {
       g.shadowBlur = 6;
       g.stroke();
     } else if (state === 'speaking') {
-      // Visor Equalizer Audio Waveform Dinamis
       const bars = 5;
       const spacing = 3.6;
       const startX = -((bars - 1) * spacing) / 2;
@@ -255,7 +241,6 @@ const DroneAvatar = (() => {
         g.fill();
       }
     } else if (state === 'thinking') {
-      // Visor Radar / Thinking Scan
       const scanPhase = (now % 1200) / 1200;
       g.beginPath();
       g.arc(0, 1, 5, 0, Math.PI * 2);
@@ -271,7 +256,6 @@ const DroneAvatar = (() => {
       g.fillStyle = '#ffffff';
       g.fill();
     } else if (mood === 'happy') {
-      // Mata Lengkung Bahagia (^_^)
       g.strokeStyle = accent;
       g.lineWidth = 2;
       g.shadowColor = accent;
@@ -285,7 +269,6 @@ const DroneAvatar = (() => {
       g.arc(5, 2, 3.5, Math.PI, 0);
       g.stroke();
     } else if (mood === 'surprised') {
-      // Mata Bulat Terkejut (o_o)
       g.fillStyle = accent;
       g.shadowColor = accent;
       g.shadowBlur = 8;
@@ -295,7 +278,6 @@ const DroneAvatar = (() => {
       g.arc(5, 1, 3.5, 0, Math.PI * 2);
       g.fill();
     } else if (mood === 'sad') {
-      // Mata Sedih / Sayu (\_/)
       g.strokeStyle = accent;
       g.lineWidth = 2;
       g.shadowColor = accent;
@@ -308,24 +290,21 @@ const DroneAvatar = (() => {
       g.lineTo(3, 0);
       g.stroke();
     } else {
-      // Mata Digital Normal (Dua Kapsul Glowing)
       g.fillStyle = accent;
       g.shadowColor = accent;
       g.shadowBlur = 7;
 
-      // Mata Kiri
       g.beginPath();
       g.roundRect(-7, -2, 4.5, 6, 2);
       g.fill();
 
-      // Mata Kanan
       g.beginPath();
       g.roundRect(2.5, -2, 4.5, 6, 2);
       g.fill();
     }
     g.restore();
 
-    // --- 7. Cincin Orbit Holografik Depan ---
+    // Holographic Orbit Ring (Front Arc)
     g.save();
     g.scale(1, 0.42);
     g.beginPath();
@@ -339,11 +318,9 @@ const DroneAvatar = (() => {
     g.restore();
 
     g.restore();
-
     requestAnimationFrame(render);
   }
 
-  // Mulai loop animasi
   requestAnimationFrame(render);
 
   return {

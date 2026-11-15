@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const api = {
   getConfig: () => ipcRenderer.invoke('get-config'),
 
-  // Streaming: onEvent menerima { kind: 'meta' | 'delta', ... }. Mengembalikan hasil akhir.
+  // Streaming response handler
   askStream: (id, payload, onEvent) => {
     const fn = (_e, m) => { if (m.id === id) onEvent(m); };
     ipcRenderer.on('stream-event', fn);
@@ -30,6 +30,6 @@ const api = {
   onClearHistory: cb => ipcRenderer.on('history-cleared', () => cb())
 };
 
-// Ekspos ke window.assistant dan window.nova agar kompatibel penuh
+// Ekspos ke window.assistant dan window.nova
 contextBridge.exposeInMainWorld('assistant', api);
 contextBridge.exposeInMainWorld('nova', api);

@@ -18,6 +18,8 @@
   },
   "ttsProvider": "auto",
   "edgeVoice": "id-ID-GadisNeural",
+  "voiceRate": "+25%",
+  "voicePitch": "+0Hz",
   "voiceLang": "id-ID",
   "voiceName": "",
   "seeScreen": true,

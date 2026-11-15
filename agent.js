@@ -1,4 +1,4 @@
-// Agen latar belakang: menjalankan Antigravity CLI (agy) dalam mode headless untuk riset baca-saja.
+// Background runner untuk Antigravity CLI (agy) mode headless
 const { spawn } = require('child_process');
 const fs = require('fs');
 
@@ -14,7 +14,6 @@ function buildPrompt(task) {
   ].join(' ').replace(/\s+/g, ' ');
 }
 
-/** Pisahkan jawaban agen menjadi ringkasan lisan dan detail */
 function splitResult(text) {
   const t = String(text || '').trim();
   const m = /\n?\s*-{3,}\s*\n?/.exec(t);

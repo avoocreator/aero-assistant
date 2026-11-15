@@ -1,9 +1,9 @@
-// Klien Gemini API (REST) dengan Server-Sent Events (SSE) streaming langsung.
+// Klien Gemini REST SSE streaming
 const BASE = process.env.GEMINI_BASE || 'https://generativelanguage.googleapis.com/v1beta/models';
 const IDLE_MS = 30000;
 const EMOTIONS = ['neutral', 'happy', 'thinking', 'surprised', 'sad'];
 
-// ---------- System Prompt ----------
+// System Prompt
 function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
   const lines = [
     `Kamu adalah ${name}, asisten AI desktop futuristik berbentuk companion drone yang mengambang di layar pengguna. Kamu cerdas, santai, dan setia seperti Jarvis versi modern untuk Kira.`,
@@ -56,7 +56,7 @@ function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
   return lines.filter(l => l !== null).join('\n');
 }
 
-// ---------- Parser Streaming Header & Body ----------
+// Streaming Parser
 function createParser({ onMeta, onDelta }) {
   let buf = '';
   let headerDone = false;
@@ -133,7 +133,6 @@ function createParser({ onMeta, onDelta }) {
   };
 }
 
-// Mode Berpikir
 const LEVELS = {
   fast:     { temp: 0.7, variants: [{ thinkingBudget: 0 }, { thinkingLevel: 'minimal' }, null] },
   balanced: { temp: 0.4, variants: [{ thinkingBudget: 1024 }, { thinkingLevel: 'low' }, null] },
@@ -223,9 +222,6 @@ function friendlyError(e) {
   return e.message;
 }
 
-/**
- * Streaming utama: Mengirim teks, audio wav, dan screenshot layar ke Gemini API.
- */
 async function askStream({ apiKey, models, name, history, input, agentEnabled, actionsEnabled, level = 'fast', signal, onMeta, onDelta }) {
   if (!apiKey) throw Object.assign(new Error('API key belum diisi. Buat file .env lalu isi GEMINI_API_KEY.'), { friendly: true });
 
@@ -277,7 +273,7 @@ async function askStream({ apiKey, models, name, history, input, agentEnabled, a
     } catch (e) {
       if (e.canceled) return { ok: false, canceled: true };
       lastErr = e;
-      if (emitted) break; // Jangan coba model lain kalau teks sudah sempat keluar
+      if (emitted) break; // Jangan coba model lain jika token teks sudah terkirim
     }
   }
 
