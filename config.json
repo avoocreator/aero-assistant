@@ -1,0 +1,36 @@
+{
+  "assistantName": "Aero",
+  "model": "gemini-flash-latest",
+  "fallbackModels": [
+    "gemini-flash-lite-latest",
+    "gemini-3.8-flash"
+  ],
+  "thinkingMode": "fast",
+  "screenWidths": {
+    "fast": 1024,
+    "balanced": 1600,
+    "deep": 2200
+  },
+  "screenQuality": {
+    "fast": 65,
+    "balanced": 78,
+    "deep": 88
+  },
+  "ttsProvider": "auto",
+  "edgeVoice": "id-ID-GadisNeural",
+  "voiceLang": "id-ID",
+  "voiceName": "",
+  "seeScreen": true,
+  "silenceMs": 1100,
+  "maxHistoryTurns": 8,
+  "hotkey": "F9",
+  "actionsEnabled": true,
+  "apps": {},
+  "agentEnabled": true,
+  "agentCommand": "agy",
+  "agentArgs": [
+    "--dangerously-skip-permissions"
+  ],
+  "agentTimeoutSec": 240,
+  "agentMaxTasks": 3
+}

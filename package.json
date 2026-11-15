@@ -1,0 +1,24 @@
+{
+  "name": "aero-assistant",
+  "version": "1.0.0",
+  "description": "Floating AI Desktop HUD ditenagai Electron, Gemini Multimodal Streaming, dan Antigravity CLI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "antigravity",
+    "electron",
+    "voice"
+  ],
+  "author": "Kira",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.4.11"
+  },
+  "optionalDependencies": {
+    "msedge-tts": "^2.1.1"
+  }
+}
