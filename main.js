@@ -75,6 +75,7 @@ if (!gotLock) {
 app.on('second-instance', () => showWindow());
 
 let win = null;
+let cursorWin = null;
 let tray = null;
 let history = [];
 let agents = null;
@@ -92,6 +93,83 @@ function addHistory(role, text) {
   else history.push({ role, text });
   history = history.slice(-(config.maxHistoryTurns * 2 + 4));
   while (history[0]?.role === 'model') history.shift();
+}
+
+// ---------- Overlay Kursor Virtual Aero (Layar Penuh, Klik Tembus) ----------
+function createCursorOverlay() {
+  if (cursorWin && !cursorWin.isDestroyed()) return;
+
+  const display = screen.getPrimaryDisplay();
+  const bounds = display.bounds;
+
+  cursorWin = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    transparent: true,
+    frame: false,
+    resizable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  cursorWin.setAlwaysOnTop(true, 'screen-saver');
+  cursorWin.setIgnoreMouseEvents(true);
+  cursorWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  cursorWin.loadFile(path.join(__dirname, 'renderer', 'cursor.html'));
+
+  cursorWin.on('closed', () => {
+    cursorWin = null;
+  });
+}
+
+async function animateVirtualCursor(cursorInput) {
+  if (!cursorWin || cursorWin.isDestroyed()) {
+    createCursorOverlay();
+  }
+
+  const display = screen.getPrimaryDisplay();
+  const screenW = display.bounds.width;
+  const screenH = display.bounds.height;
+
+  const steps = Array.isArray(cursorInput) ? cursorInput : [cursorInput];
+  let prevPos = null;
+
+  for (const step of steps) {
+    const winBounds = win ? win.getBounds() : { x: screenW - 420, y: screenH - 720, width: 420, height: 720 };
+    const droneX = winBounds.x + winBounds.width / 2;
+    const droneY = winBounds.y + winBounds.height - 180;
+
+    const fromX = prevPos ? prevPos.x : droneX;
+    const fromY = prevPos ? prevPos.y : droneY;
+
+    const toX = step.x ?? (step.relX != null ? Math.round(screenW * step.relX) : Math.round(screenW * 0.5));
+    const toY = step.y ?? (step.relY != null ? Math.round(screenH * step.relY) : Math.round(screenH * 0.5));
+
+    prevPos = { x: toX, y: toY };
+
+    if (cursorWin && !cursorWin.isDestroyed()) {
+      cursorWin.webContents.send('cursor-action', {
+        from: { x: fromX, y: fromY },
+        to: { x: toX, y: toY },
+        label: step.label || 'Aksi',
+        type: step.action || 'click'
+      });
+    }
+
+    const waitMs = step.duration || 950;
+    await new Promise(r => setTimeout(r, waitMs));
+  }
 }
 
 // ---------- Jendela Transparan Mengambang ----------
@@ -124,8 +202,14 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
+  createCursorOverlay();
+
   win.on('closed', () => {
     win = null;
+    if (cursorWin && !cursorWin.isDestroyed()) {
+      cursorWin.close();
+      cursorWin = null;
+    }
   });
 }
 
@@ -179,14 +263,20 @@ function setupAgents() {
 // ---------- Aksi Komputer ----------
 async function doActions(list) {
   const results = await actions.runActions(list, { apps: config.apps });
-  results.forEach((r, i) => {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     if (r.ok) {
       console.log(`[Aksi Berhasil] ${r.label}`);
+      if (r.cursorSteps) {
+        await animateVirtualCursor(r.cursorSteps);
+      } else if (r.cursor) {
+        await animateVirtualCursor(r.cursor);
+      }
     } else {
       console.warn(`[Aksi Gagal] ${list[i]?.type}: ${r.error}`);
       send('action-event', { ok: false, type: list[i]?.type, error: r.error });
     }
-  });
+  }
 }
 
 // ---------- IPC Handler ----------
@@ -256,6 +346,7 @@ ipcMain.handle('ask-stream', async (e, { id, text, audioB64, audioMime }) => {
 
 ipcMain.on('cancel-ask', (_e, id) => asks.get(id)?.abort());
 ipcMain.on('agent-cancel', (_e, id) => agents?.cancel(id));
+ipcMain.on('trigger-cursor-action', (_e, data) => animateVirtualCursor(data));
 
 ipcMain.handle('tts-edge', async (_e, text) => {
   try {

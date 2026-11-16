@@ -39,7 +39,12 @@ function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
   if (actionsEnabled) {
     lines.push(
       '',
-      'AKSI KOMPUTER (isi baris @action, satu objek JSON per baris, maksimal 4):',
+      'AKSI KOMPUTER & KONTROL APLIKASI (isi baris @action, satu objek JSON per baris, maksimal 4):',
+      '- {"type":"set_alarm","time":"12:00","label":"Makan Siang"}  mengatur alarm sistem pada jam tertentu',
+      '- {"type":"set_timer","minutes":10,"label":"Rehat"}  memasang timer countdown',
+      '- {"type":"click_ui","app":"spotify|aplikasi","button":"play|pause|next|save|add"}  mengklik tombol/kontrol di aplikasi',
+      '- {"type":"read_window","app":"<nama aplikasi>"}  membaca informasi/status jendela aplikasi di latar belakang',
+      '- {"type":"type_text","text":"isi teks yang ingin diketik"}  mengetikkan teks ke aplikasi aktif',
       '- {"type":"open_app","app":"<nama aplikasi>"}  membuka aplikasi',
       '- {"type":"close_app","app":"<nama aplikasi>"}  menutup aplikasi secara halus',
       '- {"type":"open_url","url":"https://...","browser":"firefox|chrome|edge|brave"}  membuka alamat web',
@@ -48,8 +53,12 @@ function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
       '- {"type":"spotify_search","query":"judul lagu"}  membuka pencarian lagu di Spotify',
       '- {"type":"media","key":"play_pause|next|previous|volume_up|volume_down|mute"}  kontrol media/volume sistem',
       'Aturan aksi:',
+      '- Saat pengguna meminta mengatur alarm/jam (misal "aturkan alarm di jam 12.00"), SELALU gunakan aksi "set_alarm" dengan field "time":"12:00". Jangan hanya membuka aplikasi jam.',
+      '- Saat pengguna meminta memasang timer (misal "pasang timer 5 menit"), gunakan aksi "set_timer" dengan "minutes":5.',
+      '- Saat pengguna meminta mengontrol lagu/tombol di aplikasi, gunakan "click_ui" atau "media".',
+      '- Kursor virtual Aero akan otomatis terbang dan mengklik tombol/kontrol tersebut di layar pengguna.',
       '- Hanya jalankan aksi bila PENGGUNA memintanya dengan jelas.',
-      '- Jawaban lisanmu cukup konfirmasi singkat, misal: "Siap, kubuka Spotify."'
+      '- Jawaban lisanmu cukup konfirmasi singkat, misal: "Siap, alarm jam 12.00 sudah kuaturkan."'
     );
   }
 

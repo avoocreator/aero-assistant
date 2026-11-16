@@ -14,6 +14,8 @@ const api = {
 
   ttsEdge: text => ipcRenderer.invoke('tts-edge', text),
   onActionEvent: cb => ipcRenderer.on('action-event', (_e, ev) => cb(ev)),
+  onCursorAction: cb => ipcRenderer.on('cursor-action', (_e, data) => cb(data)),
+  triggerCursorAction: data => ipcRenderer.send('trigger-cursor-action', data),
   cycleThink: () => ipcRenderer.invoke('cycle-think'),
   onThinkChanged: cb => ipcRenderer.on('think-changed', (_e, v) => cb(v)),
   clearHistory: () => ipcRenderer.invoke('clear-history'),
