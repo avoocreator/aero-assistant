@@ -1,26 +1,24 @@
-// Edge Neural TTS sintesis audio buffer
+// Modul suara saraf (neural) gratis lewat Microsoft Edge (msedge-tts).
 let lib = null;
 try {
   lib = require('msedge-tts');
-} catch {}
+} catch {
+  // paket opsional
+}
 
 function available() {
   return Boolean(lib?.MsEdgeTTS);
 }
 
-async function synth(text, voice = 'id-ID-GadisNeural', options = {}) {
+/** Mengembalikan Buffer MP3 audio */
+async function synth(text, voice = 'id-ID-GadisNeural') {
   if (!available()) {
     throw new Error('Paket msedge-tts belum terpasang.');
   }
   const { MsEdgeTTS, OUTPUT_FORMAT } = lib;
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-
-  const rate = options.rate || '+25%';
-  const pitch = options.pitch || '+0Hz';
-  const volume = options.volume || '+0%';
-
-  const r = tts.toStream(text, { rate, pitch, volume });
+  const r = tts.toStream(text);
   const stream = r?.audioStream || r;
 
   return new Promise((resolve, reject) => {

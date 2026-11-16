@@ -9,7 +9,7 @@ const { AgentManager } = require('./agent');
 const actions = require('./actions');
 const edgeTts = require('./edge-tts');
 
-// Muat variabel lingkungan dari .env lokal atau folder terkait
+// ---------- Muat Variabel Lingkungan ----------
 function loadEnv() {
   const envCandidates = [
     path.join(__dirname, '.env'),
@@ -40,8 +40,6 @@ let config = {
   screenQuality: { fast: 65, balanced: 78, deep: 88 },
   ttsProvider: 'auto',
   edgeVoice: 'id-ID-GadisNeural',
-  voiceRate: '+25%',
-  voicePitch: '+0Hz',
   voiceLang: 'id-ID',
   voiceName: '',
   seeScreen: true,
@@ -60,7 +58,7 @@ let config = {
 try {
   config = { ...config, ...JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8')) };
 } catch (e) {
-  console.warn('config.json tidak terbaca, pakai konfigurasi bawaan:', e.message);
+  console.warn('config.json tidak terbaca, pakai bawaan:', e.message);
 }
 
 const MODES = ['fast', 'balanced', 'deep'];
@@ -68,7 +66,7 @@ if (!MODES.includes(config.thinkingMode)) config.thinkingMode = 'fast';
 let thinkMode = config.thinkingMode;
 const MODE_NAME = { fast: 'Cepat (~1s)', balanced: 'Seimbang', deep: 'Dalam' };
 
-// Proteksi single-instance
+// Hanya satu instans yang boleh berjalan
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -86,7 +84,7 @@ const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
-// Manajemen Riwayat Percakapan
+// ---------- Riwayat Percakapan ----------
 function addHistory(role, text) {
   if (!text) return;
   const last = history[history.length - 1];
@@ -96,7 +94,7 @@ function addHistory(role, text) {
   while (history[0]?.role === 'model') history.shift();
 }
 
-// Windowing & Overlay
+// ---------- Jendela Transparan Mengambang ----------
 function createWindow() {
   const W = 420, H = 720;
   const wa = screen.getPrimaryDisplay().workArea;
@@ -142,7 +140,7 @@ function showWindow() {
   win.focus();
 }
 
-// Vision (Screen Capture)
+// ---------- Visi Layar (Vision) ----------
 async function captureScreen() {
   const display = win ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
   const maxW = config.screenWidths[thinkMode] || 1600;
@@ -160,7 +158,7 @@ async function captureScreen() {
   return src.thumbnail.toJPEG(config.screenQuality[thinkMode] || 78).toString('base64');
 }
 
-// Background Agent (Antigravity CLI)
+// ---------- Agen Latar Belakang (Antigravity CLI) ----------
 function setupAgents() {
   if (!config.agentEnabled) return;
   agents = new AgentManager({
@@ -178,7 +176,7 @@ function setupAgents() {
   });
 }
 
-// Aksi Komputer
+// ---------- Aksi Komputer ----------
 async function doActions(list) {
   const results = await actions.runActions(list, { apps: config.apps });
   results.forEach((r, i) => {
@@ -191,12 +189,11 @@ async function doActions(list) {
   });
 }
 
-// IPC Handlers
+// ---------- IPC Handler ----------
 ipcMain.handle('get-config', () => ({
   assistantName: config.assistantName,
   voiceLang: config.voiceLang,
   voiceName: config.voiceName,
-  voiceRate: config.voiceRate,
   ttsProvider: config.ttsProvider,
   seeScreen: config.seeScreen,
   silenceMs: config.silenceMs,
@@ -262,9 +259,7 @@ ipcMain.on('agent-cancel', (_e, id) => agents?.cancel(id));
 
 ipcMain.handle('tts-edge', async (_e, text) => {
   try {
-    const rate = config.voiceRate || '+25%';
-    const pitch = config.voicePitch || '+0Hz';
-    const buf = await edgeTts.synth(text, config.edgeVoice, { rate, pitch });
+    const buf = await edgeTts.synth(text, config.edgeVoice);
     return { ok: true, audioB64: buf.toString('base64') };
   } catch (err) {
     console.warn('Edge TTS gagal:', err.message);
@@ -314,7 +309,7 @@ ipcMain.on('set-ignore-mouse', (_e, ignore) => {
 ipcMain.on('hide-window', () => win?.hide());
 ipcMain.on('quit-app', () => app.quit());
 
-// Tray & Menu
+// ---------- Tray & Menu ----------
 function buildTrayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([

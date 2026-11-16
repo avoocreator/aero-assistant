@@ -1,9 +1,13 @@
-// Whitelist aksi sistem via env vars untuk mencegah command injection.
+// Aksi komputer yang boleh dijalankan Asisten: buka/tutup aplikasi, buka URL, cari di web/YouTube/Spotify, tombol media.
+// DAFTAR PUTIH: model hanya bisa memilih jenis aksi di bawah ini. Tidak ada eksekusi perintah bebas.
+// Semua nilai dari model dikirim ke PowerShell lewat variabel lingkungan (bukan disisipkan ke teks perintah),
+// jadi aman dari injeksi perintah.
 const { execFile, spawn } = require('child_process');
 
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 
+// Nama panggilan aplikasi umum -> { start: perintah/URI untuk dibuka, proc: nama proses untuk ditutup }
 const BUILTIN_APPS = {
   firefox: { start: 'firefox', proc: 'firefox' },
   chrome: { start: 'chrome', proc: 'chrome' },
@@ -16,12 +20,12 @@ const BUILTIN_APPS = {
   calculator: { start: 'calc', proc: 'CalculatorApp' },
   kalkulator: { start: 'calc', proc: 'CalculatorApp' },
   paint: { start: 'mspaint', proc: 'mspaint' },
-  explorer: { start: 'explorer', proc: null },
+  explorer: { start: 'explorer', proc: null },          // tidak boleh ditutup
   vscode: { start: 'code', proc: 'Code' },
   'visual studio code': { start: 'code', proc: 'Code' }
 };
 
-// Proses kritis yang tidak boleh dimatikan asisten
+// Proses yang tidak pernah boleh ditutup asisten.
 const PROTECTED = [
   'explorer', 'system', 'idle', 'csrss', 'winlogon', 'wininit', 'services', 'lsass', 'svchost', 'dwm',
   'electron', 'antigravity', 'node', 'cmd', 'powershell', 'pwsh', 'conhost', 'taskmgr', 'searchhost', 'startmenuexperiencehost'
@@ -34,7 +38,7 @@ const SEARCH = {
   maps: q => `https://www.google.com/maps/search/${encodeURIComponent(q)}`
 };
 
-// Shortcut DuckDuckGo bang untuk langsung membuka video pertama YouTube
+// "\kata kunci" di DuckDuckGo = langsung lompat ke video pertama di YouTube.
 const YT_FIRST = q => `https://duckduckgo.com/?q=${encodeURIComponent('\\' + q + ' site:youtube.com/watch')}`;
 const MEDIA_KEYS = { play_pause: 0xB3, next: 0xB0, previous: 0xB1, volume_up: 0xAF, volume_down: 0xAE, mute: 0xAD };
 
@@ -64,7 +68,7 @@ function validUrl(u) {
   return url.href;
 }
 
-// URL & Browser
+// ---------- Pembuka URL ----------
 async function openUrl(url, browser) {
   const exe = browser ? BROWSERS[String(browser).toLowerCase()] : null;
   if (IS_WIN) {
@@ -80,7 +84,7 @@ async function openUrl(url, browser) {
   }
 }
 
-// Manajemen Aplikasi
+// ---------- Aplikasi ----------
 function resolveAlias(name, custom) {
   const key = name.toLowerCase();
   return (custom && custom[key]) ? custom[key] : BUILTIN_APPS[key] || null;
@@ -94,6 +98,7 @@ async function openApp(name, custom) {
       await ps('Start-Process $env:AGY_APP', { AGY_APP: alias.start });
       return `Membuka ${name}`;
     }
+    // Cari di aplikasi terpasang (Start Menu)
     const found = await ps(
       '$a = Get-StartApps | Where-Object { $_.Name -like ("*" + $env:AGY_APP + "*") } | Sort-Object { $_.Name.Length } | Select-Object -First 1;' +
       'if ($a) { Start-Process ("shell:AppsFolder\\" + $a.AppID); $a.Name }',
@@ -118,7 +123,7 @@ async function closeApp(name, custom) {
     throw new Error(`${name} dilindungi sistem dan tidak akan ditutup.`);
   }
   if (IS_WIN) {
-    // CloseMainWindow memicu penutupan halus tanpa force kill
+    // Penutupan halus (setara klik X). Aplikasi yang punya dokumen belum tersimpan akan bertanya dulu.
     const n = await ps(
       '$prot = $env:AGY_PROT.Split(","); $q = $env:AGY_APP;' +
       '$p = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ($prot -notcontains $_.ProcessName.ToLower()) -and ($_.ProcessName -like ("*" + $q + "*") -or $_.MainWindowTitle -like ("*" + $q + "*")) };' +
@@ -155,7 +160,7 @@ async function spotifySearch(query) {
   return `Membuka pencarian Spotify: ${query}`;
 }
 
-// Action Dispatcher
+// ---------- Pintu Masuk ----------
 async function runAction(a, opts = {}) {
   try {
     const type = String(a?.type || '');

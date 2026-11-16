@@ -3,51 +3,53 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; media-src 'self' blob: data:; img-src 'self' data: blob:;">
-  <title>Aero Assistant</title>
+  <title>Aero</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body data-state="idle">
   <div id="app">
+    <!-- Bubble Chat Area -->
     <div id="bubbles" aria-live="polite">
-      <div id="userBub" class="bub user hidden">
-        <span class="sender-tag">Kamu</span>
-        <div class="txt"></div>
-      </div>
+      <!-- Bubble Input Pengguna -->
+      <div id="userBub" class="bub user hidden"><div class="txt"></div></div>
 
+      <!-- Bubble Respons Asisten (Aero / Antigravity) -->
       <div id="aeroBub" class="bub aero hidden">
-        <div class="bubble-header">
-          <span class="bot-tag">✦ Aero · Antigravity</span>
-        </div>
         <div class="txt"></div>
         <div class="extra"></div>
       </div>
     </div>
 
+    <!-- Tugas Latar Belakang (Chips Agen Antigravity) -->
     <div id="tasks"></div>
 
-    <div id="stage" class="interactive" title="Klik untuk bicara">
-      <canvas id="avatar" width="96" height="96" aria-label="Avatar Drone"></canvas>
+    <!-- Panggung avatar -->
+    <div id="stage" class="interactive" title="Klik untuk bicara / interaksi">
+      <canvas id="avatar" width="56" height="56" aria-label="Avatar Aero"></canvas>
       <div id="stateLabel"></div>
     </div>
 
+    <!-- Toolbar Kontrol Mengambang -->
     <div id="toolbar" class="interactive">
-      <button id="grip" title="Tahan dan geser jendela" aria-label="Geser">⠿</button>
-      <button id="btnMic" title="Bicara (F9)" aria-label="Bicara">🎤</button>
-      <button id="btnType" title="Ketik pesan" aria-label="Ketik">⌨</button>
-      <button id="btnThink" title="Mode berpikir" aria-label="Mode Berpikir" data-mode="fast">⚡</button>
-      <button id="btnEye" title="Lihat layar (Vision)" aria-label="Lihat Layar" aria-pressed="true">👁</button>
-      <button id="btnReset" title="Lupakan percakapan" aria-label="Reset Sesi">↺</button>
-      <button id="btnHide" title="Sembunyikan ke tray" aria-label="Sembunyikan">–</button>
-      <button id="btnQuit" title="Tutup aplikasi" aria-label="Keluar">✕</button>
+      <button id="grip" title="Tahan dan geser posisi jendela" aria-label="Geser"></button>
+      <button id="btnMic" title="Bicara (F9)" aria-label="Bicara"></button>
+      <button id="btnType" title="Ketik pesan teks" aria-label="Ketik"></button>
+      <button id="btnThink" title="Mode berpikir: Cepat (~1s)" aria-label="Mode Berpikir" data-mode="fast"></button>
+      <button id="btnEye" title="Boleh lihat layar (Vision)" aria-label="Lihat Layar" aria-pressed="true"></button>
+      <button id="btnReset" title="Lupakan riwayat percakapan" aria-label="Reset Sesi"></button>
+      <button id="btnHide" title="Sembunyikan ke sistem tray" aria-label="Sembunyikan"></button>
+      <button id="btnQuit" title="Tutup aplikasi" aria-label="Keluar"></button>
     </div>
 
+    <!-- Form Input Teks (Tersembunyi sampai tombol keyboard diklik) -->
     <form id="typeForm" class="interactive hidden" autocomplete="off">
-      <input id="typeInput" type="text" placeholder="Ketik perintah atau pertanyaan…" maxlength="1000">
-      <button type="submit" id="btnSend" aria-label="Kirim">➔</button>
+      <input id="typeInput" type="text" placeholder="Ketik perintah atau tanya sesuatu..." maxlength="1000">
+      <button type="submit" id="btnSend" aria-label="Kirim"></button>
     </form>
   </div>
 
-  <script src="drone-avatar.js"></script>
+  <script src="pixel-avatar.js"></script>
+  <script src="icons.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

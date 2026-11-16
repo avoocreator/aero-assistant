@@ -9,7 +9,7 @@ Aero adalah asisten desktop HUD mengambang (*frameless, click-through overlay*) 
 - **Ultra-Fast Voice & Vision Loop (~1s):** Kombinasi Gemini Flash Streaming dengan *dynamic screen downscaling* dan Web Audio VAD untuk percakapan suara interaktif alami.
 - **Kontrol Komputer Aman (Actions):** Eksekusi tindakan sistem daftar putih (membuka aplikasi, navigasi URL, pencarian YouTube/Spotify, dan kontrol tombol media Windows).
 - **Orkestrasi Background Agent (Antigravity CLI):** Menjalankan riset mendalam atau coding via sub-proses headless `agy` di latar belakang secara asinkron lengkap dengan *task chips* dan notifikasi suara saat selesai.
-- **Avatar Drone Prosedural (HTML5 Canvas):** 60 FPS companion drone dengan thruster plasma, cincin orbit holografik, sensor visor equalizer reaktif suara, dan pelacakan kursor (*gaze tracking*).
+- **Avatar Pixel-Art Prosedural (HTML5 Canvas):** Aero berupa bola emas dengan visor bermata cyan dan dua telinga yang melayang. Digambar per piksel dengan animasi mengambang, kedip, ekspresi (senang, sedih, kaget), gerak mulut mengikuti suara, dan pelacakan kursor.
 - **Click-Through HUD:** Area transparan sepenuhnya tembus klik ke jendela di belakangnya; hanya tombol kontrol dan bubble chat yang menangkap interaksi mouse.
 - **Integrasi Penuh OS Windows:** Hotkey global `F9`, peluncur senyap tanpa jendela terminal (`aero.cmd` via `Win + R`), dan menu System Tray.
 
@@ -70,7 +70,7 @@ Setelah itu, kamu bisa memanggil Aero kapan saja dengan menekan `Win + R`, ketik
 ## ⌨️ Kontrol & Pintasan Keyboard
 
 - **F9:** Mulai / hentikan mendengarkan suara (Push-to-Talk) atau memotong asisten yang sedang berbicara (*barge-in*).
-- **Klik Drone:** Mulai berbicara atau batalkan proses berpikir.
+- **Klik Aero:** Mulai berbicara atau batalkan proses berpikir.
 - **⠿ (Grip):** Tahan dan geser untuk memindahkan posisi HUD di desktop.
 - **🎤 (Mic):** Toggle input suara.
 - **⌨ (Ketik):** Tampilkan formulir input ketikan teks.

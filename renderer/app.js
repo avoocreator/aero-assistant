@@ -53,7 +53,9 @@
     if (state === 'idle') window.Avatar?.setMood('neutral');
   }, ms);
 
-  // Bubble UI
+  // =====================================================================
+  //  MANAJEMEN BUBBLE CHAT
+  // =====================================================================
   const Bubble = {
     user(text) {
       userTxt.textContent = text;
@@ -151,7 +153,9 @@
   const addSys = (text, ms) => Bubble.note(text, ms);
   const addError = text => Bubble.error(text);
 
-  // Audio Output (Edge TTS & Equalizer)
+  // =====================================================================
+  //  SUARA KELUAR (Streaming Edge Neural TTS + Sinkronisasi Visor Equalizer)
+  // =====================================================================
   const Speaker = (() => {
     let epoch = 0;
     let ctx = null;
@@ -185,13 +189,14 @@
       window.Avatar?.setMouth(0);
     }
 
+    // Fallback: Suara bawaan sistem operasi (SpeechSynthesis)
     function utter(text) {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = cfg.voiceLang || 'id-ID';
       const v = findVoice();
       if (v) u.voice = v;
-      u.rate = 1.25;
-      u.pitch = 1.05;
+      u.rate = 1.05;
+      u.pitch = 1.08;
       const done = new Promise(res => {
         u.onstart = () => { if (sysSpeaking++ === 0) mouthStart(); };
         u.onend = u.onerror = () => { if (--sysSpeaking <= 0) { sysSpeaking = 0; mouthStop(); } res(); };
@@ -200,6 +205,7 @@
       return done;
     }
 
+    // Suara utama: Edge Neural TTS (Indonesia Gadis/Ardi) via AudioContext
     const b64ToBytes = b64 => {
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);
@@ -310,38 +316,17 @@
           pending += delta;
 
           let end = lastBoundary(pending);
-
-          // Potong awal agar audio langsung mulai paralel dengan streaming teks
-          if (!firstDone) {
-            if (end <= 0 && pending.length >= 6 && /[.!?…,:;]["')\]]?$/.test(pending)) {
-              end = pending.length;
-            }
-            if (end <= 0) {
-              const earlyPunct = pending.search(/[.!?…,:;]\s/);
-              if (earlyPunct >= 5) {
-                end = earlyPunct + 1;
-              }
-            }
+          if (end <= 0 && !firstDone && pending.length >= 15 && /[.!?…]["')\]]?$/.test(pending)) {
+            end = pending.length;
           }
-
           if (end > 0) {
             enqueue(pending.slice(0, end));
             pending = pending.slice(end);
             return;
           }
-
-          if (!firstDone && pending.length >= 18) {
+          if (!firstDone && pending.length >= 45) {
             const cut = Math.max(pending.lastIndexOf(','), pending.lastIndexOf(' '));
-            if (cut >= 10) {
-              enqueue(pending.slice(0, cut + 1));
-              pending = pending.slice(cut + 1);
-              return;
-            }
-          }
-
-          if (firstDone && pending.length >= 85) {
-            const cut = Math.max(pending.lastIndexOf(','), pending.lastIndexOf(';'), pending.lastIndexOf(' '));
-            if (cut >= 40) {
+            if (cut >= 25) {
               enqueue(pending.slice(0, cut + 1));
               pending = pending.slice(cut + 1);
             }
@@ -363,10 +348,17 @@
     return { start, stop };
   })();
 
-  // Audio Input (Web Audio VAD -> 16kHz WAV)
-  async function recordUtterance() {
+  // =====================================================================
+  //  SUARA MASUK (Web Audio RMS VAD -> WAV 16 kHz)
+  // =====================================================================
+  async function recordUtterance(onReady) {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1
+      }
     });
     const ctx = new AudioContext();
     const source = ctx.createMediaStreamSource(stream);
@@ -377,11 +369,16 @@
     proc.connect(mute);
     mute.connect(ctx.destination);
 
-    const chunks = [];
+    // Ring buffer untuk pre-roll (~250ms) agar konsonan awal tidak hilang
+    const preRoll = [];
+    const maxPreRollChunks = 3;
+    const speechChunks = [];
+
     let heardSpeech = false;
+    let readyNotified = false;
     const t0 = performance.now();
     let lastVoice = t0;
-    const THRESH = 0.015;
+    const THRESH = 0.014;
 
     return new Promise(resolve => {
       let done = false;
@@ -394,14 +391,19 @@
         stream.getTracks().forEach(t => t.stop());
         const rate = ctx.sampleRate;
         ctx.close();
-        resolve(heardSpeech ? { samples: merge(chunks), rate } : null);
+        resolve(heardSpeech && speechChunks.length > 0 ? { samples: merge(speechChunks), rate } : null);
       };
 
       stopRecording = finish;
 
       proc.onaudioprocess = e => {
+        if (!readyNotified) {
+          readyNotified = true;
+          onReady?.();
+        }
+
         const data = e.inputBuffer.getChannelData(0);
-        chunks.push(new Float32Array(data));
+        const copy = new Float32Array(data);
 
         let sum = 0;
         for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
@@ -409,11 +411,21 @@
 
         const now = performance.now();
         if (rms > THRESH) {
-          heardSpeech = true;
+          if (!heardSpeech) {
+            heardSpeech = true;
+            for (const c of preRoll) speechChunks.push(c);
+            preRoll.length = 0;
+          }
+          speechChunks.push(copy);
           lastVoice = now;
+        } else if (heardSpeech) {
+          speechChunks.push(copy);
+        } else {
+          preRoll.push(copy);
+          if (preRoll.length > maxPreRollChunks) preRoll.shift();
         }
 
-        const silenceLimit = cfg.silenceMs || 1100;
+        const silenceLimit = cfg.silenceMs || 1000;
         if (heardSpeech && now - lastVoice > silenceLimit) {
           finish();
         } else if (!heardSpeech && now - t0 > 8000) {
@@ -439,13 +451,27 @@
       const ratio = rate / target;
       const n = Math.floor(samples.length / ratio);
       pcm = new Float32Array(n);
+      const win = Math.max(1, Math.round(ratio));
       for (let i = 0; i < n; i++) {
-        const pos = i * ratio;
-        const i0 = Math.floor(pos);
-        const i1 = Math.min(i0 + 1, samples.length - 1);
-        pcm[i] = samples[i0] + (samples[i1] - samples[i0]) * (pos - i0);
+        const center = Math.floor(i * ratio);
+        let sum = 0, count = 0;
+        const start = Math.max(0, center - Math.floor(win / 2));
+        const end = Math.min(samples.length, start + win);
+        for (let j = start; j < end; j++) {
+          sum += samples[j];
+          count++;
+        }
+        pcm[i] = count > 0 ? sum / count : samples[center];
       }
     }
+
+    // Normalisasi digital: angkat suara lemah mendekati batas dinamis 16-bit
+    let maxPeak = 0;
+    for (let i = 0; i < pcm.length; i++) {
+      const abs = Math.abs(pcm[i]);
+      if (abs > maxPeak) maxPeak = abs;
+    }
+    const gain = maxPeak > 0.02 ? Math.min(8.0, 0.88 / maxPeak) : 1.0;
 
     const buf = new ArrayBuffer(44 + pcm.length * 2);
     const v = new DataView(buf);
@@ -456,7 +482,7 @@
     w(36, 'data'); v.setUint32(40, pcm.length * 2, true);
 
     for (let i = 0; i < pcm.length; i++) {
-      const s = Math.max(-1, Math.min(1, pcm[i]));
+      const s = Math.max(-1, Math.min(1, pcm[i] * gain));
       v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
     }
     return new Uint8Array(buf);
@@ -470,7 +496,9 @@
     return btoa(bin);
   }
 
-  // Main Interaction Loop
+  // =====================================================================
+  //  ALUR UTAMA (RESPON & STREAMING)
+  // =====================================================================
   function abortCurrent() {
     turn++;
     Speaker.stop();
@@ -564,13 +592,14 @@
   async function startListening() {
     abortCurrent();
     Bubble.hide();
-    setState('listening');
     window.Avatar?.setMood('surprised');
-    setTimeout(() => { if (state === 'listening') window.Avatar?.setMood('neutral'); }, 350);
 
     let rec;
     try {
-      rec = await recordUtterance();
+      rec = await recordUtterance(() => {
+        setState('listening');
+        setTimeout(() => { if (state === 'listening') window.Avatar?.setMood('neutral'); }, 350);
+      });
     } catch (err) {
       console.warn('Gagal akses mic:', err);
       setState('error');
@@ -601,10 +630,13 @@
       addSys('Dibatalkan.', 2500);
       return;
     }
+    // Jika sedang speaking, langsung dipotong (barge-in)
     startListening();
   }
 
-  // Background Agent Chips
+  // =====================================================================
+  //  AGEN LATAR BELAKANG (CHIPS & NOTIFIKASI)
+  // =====================================================================
   const chips = new Map();
 
   function addChip(id, title) {
@@ -667,7 +699,9 @@
     if (!ev.ok) Bubble.error(`Gagal menjalankan aksi: ${ev.error}`, 8000);
   });
 
-  // Controls & Toolbar
+  // =====================================================================
+  //  KONTROL TOOLBAR & INTERAKSI
+  // =====================================================================
   stage.addEventListener('click', toggleListening);
   btnMic.addEventListener('click', toggleListening);
   api.onHotkey(toggleListening);
@@ -697,12 +731,11 @@
     balanced: 'Seimbang: analisa lebih teliti dengan kecepatan seimbang',
     deep: 'Dalam: analisa menyeluruh untuk tugas kompleks'
   };
-  const THINK_LABEL = { fast: 'Cepat (⚡)', balanced: 'Seimbang (⚖️)', deep: 'Dalam (🧠)' };
+  const THINK_LABEL = { fast: 'Cepat', balanced: 'Seimbang', deep: 'Dalam' };
 
   function renderThink(m, announceMode = false) {
     btnThink.title = `Mode Berpikir: ${THINK_HINT[m]} (klik untuk ganti)`;
     btnThink.dataset.mode = m;
-    btnThink.textContent = m === 'fast' ? '⚡' : m === 'balanced' ? '⚖️' : '🧠';
     if (announceMode) {
       Bubble.note(`Mode Berpikir: ${THINK_LABEL[m]}. ${THINK_HINT[m].split(': ')[1]}.`, 3500);
     }
@@ -735,7 +768,7 @@
   btnHide.addEventListener('click', () => api.hide());
   btnQuit.addEventListener('click', () => api.quit());
 
-  // Mouse Passthrough & Gaze Tracking
+  // Mouse Passthrough (Area transparan tembus klik ke window di bawahnya)
   let ignoring = null;
   const setIgnore = v => {
     if (ignoring !== v) {
@@ -747,12 +780,13 @@
   window.addEventListener('mousemove', e => {
     setIgnore(!e.target.closest('.interactive, .bub, .chip'));
 
+    // Gaze / Look tracking untuk avatar Aero
     if (window.Avatar?.setLook) {
       const rect = stage.getBoundingClientRect();
-      const droneCenterX = rect.left + rect.width / 2;
-      const droneCenterY = rect.top + rect.height / 2;
-      const dx = (e.clientX - droneCenterX) / 100;
-      const dy = (e.clientY - droneCenterY) / 100;
+      const avatarCenterX = rect.left + rect.width / 2;
+      const avatarCenterY = rect.top + rect.height / 2;
+      const dx = (e.clientX - avatarCenterX) / 100;
+      const dy = (e.clientY - avatarCenterY) / 100;
       window.Avatar.setLook(dx, dy);
     }
   });
@@ -763,14 +797,16 @@
   });
   setIgnore(true);
 
-  // Greeting
+  // =====================================================================
+  //  SAPAAN AWAL
+  // =====================================================================
   if (!cfg.hasKey) {
     setState('error');
     window.Avatar?.setMood('sad');
     addError('Kunci API belum ditemukan. Pastikan GEMINI_API_KEY ada di .env.');
   } else {
     window.Avatar?.setMood('happy');
-    Bubble.note(`Halo Kira! Aku ${cfg.assistantName}. Tekan ${cfg.hotkey} atau klik drone untuk bicara.`, 6000);
+    Bubble.note(`Halo Kira! Aku ${cfg.assistantName}. Tekan ${cfg.hotkey} atau klik aku untuk bicara.`, 6000);
     neutralSoon(2500);
   }
 })();
