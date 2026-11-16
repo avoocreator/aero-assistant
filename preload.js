@@ -16,6 +16,7 @@ const api = {
   onActionEvent: cb => ipcRenderer.on('action-event', (_e, ev) => cb(ev)),
   onCursorAction: cb => ipcRenderer.on('cursor-action', (_e, data) => cb(data)),
   onFly: cb => ipcRenderer.on('fly', (_e, ev) => cb(ev)),
+  flyToArea: area => ipcRenderer.invoke('fly-to-area', area),
   reportBusy: busy => ipcRenderer.send('ui-busy', busy),
   flyCancel: () => ipcRenderer.send('fly-cancel'),
   cancelOperator: () => ipcRenderer.send('cancel-operator'),

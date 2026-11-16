@@ -332,6 +332,7 @@ async function runAction(a, opts = {}) {
         return { ok: true, label: await spotifySearch(q) };
       }
       case 'media': return { ok: true, label: await mediaKey(String(a.key)) };
+      case 'move': return { ok: true, label: `Pindah ke area ${a.area || a.direction || 'lain'}` };
       default: throw new Error(`Aksi "${type}" tidak dikenal.`);
     }
   } catch (e) {

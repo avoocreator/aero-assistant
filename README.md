@@ -111,9 +111,11 @@ Saat dalam kondisi menganggur (*idle*), mesin animasi avatar secara berkala memi
 - **Kedipan:** Kedip tunggal periodik, kedip ganda cepat, atau kedipan sebelah mata.
 - **Tertidur & Bangun Kaget:** Setelah beberapa menit tanpa aktivitas, Aero akan menguap dan tidur lelap. Menyentuh kanvas avatar dengan mouse akan membangunkannya secara spontan.
 
-### 3. Terbang Otonom Berpindah Tempat (`roam.js`)
+### 3. Terbang Otonom & Perintah Berpindah Tempat (`roam.js`)
 Aero memiliki kemampuan navigasi fisik melintasi layar monitor menggunakan lintasan lengkung kurva Bezier kuadratik:
 - **Kondisi Memicu:** Berjalan acak setiap 50–160 detik saat menganggur, atau dipicu oleh selesainya tugas komputasi.
+- **Perintah Berpindah Area ("Pindah / Geser"):** Pengguna dapat memerintahkan Aero berpindah saat posisinya menghalangi layar (misal: *"pindah ke kiri"*, *"geser ke atas"*, *"ke pojok kanan bawah"*, *"ke tengah"*, *"balik ke asal"*, atau *"minggir dong nutupin"*).
+  - Sistem tidak menggeser secara garis lurus kaku, melainkan memetakan zona spasial target (`left`, `right`, `top`, `bottom`, `top_left`, `top_right`, `bottom_left`, `bottom_right`, `center`, `home`, `away`), lalu menerbangkan Aero secara organik melengkung ke titik aman di area tersebut.
 - **Pose Terbang:** Saat meluncur, tubuh Aero condong searah vektor kecepatan, telinga mengepak cepat, muncul garis kecepatan (*speed lines*), dan diakhiri dengan kompresi pendaratan elastis (*squash and bounce*).
 - **Proteksi Batas Layar:** Algoritma navigasi menjamin posisi mendarat selalu menyisakan ruang aman untuk balon percakapan di atasnya, berada di dalam batas tampilan aktif (*work area*), dan tidak mendarat menimpa kursor mouse pengguna.
 - **Interupsi Interaktif:** Menekan mouse saat Aero sedang terbang akan langsung membatalkan lintasan dan "menangkapnya" seketika.

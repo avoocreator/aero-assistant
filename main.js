@@ -392,6 +392,20 @@ async function doActions(list) {
 
     if (task) { await runTask(task); continue; }
 
+    if (a?.type === 'move') {
+      const area = a.area || a.direction || 'away';
+      const ok = roamer?.flyToArea(area);
+      if (ok) {
+        console.log(`[Aksi Berhasil] Pindah ke area: ${area}`);
+        send('action-event', { ok: true, type: 'move', label: `Pindah ke area ${area}` });
+      } else {
+        console.warn(`[Aksi Gagal] Tidak bisa pindah ke area: ${area}`);
+        send('action-event', { ok: false, type: 'move', error: `Tidak bisa pindah ke area ${area}` });
+      }
+      await sleep(300);
+      continue;
+    }
+
     const r = await actions.runAction(a, { apps: config.apps });
     if (r.ok) console.log(`[Aksi Berhasil] ${r.label}`);
     else {
@@ -479,6 +493,7 @@ ipcMain.on('ui-busy', (_e, busy) => {
   if (was && !uiBusy && Date.now() - busySince > 4000) roamer?.nudge('selesai', 0.2);
 });
 ipcMain.on('fly-cancel', () => roamer?.cancel());
+ipcMain.handle('fly-to-area', (_e, area) => roamer?.flyToArea(area) || false);
 
 ipcMain.handle('tts-edge', async (_e, text) => {
   try {

@@ -51,6 +51,100 @@ function pickTarget(from, wa, cursor, home, rng = Math.random, size) {
   return null;
 }
 
+/** Menormalkan perintah arah / area ke format standar */
+function normalizeArea(str) {
+  const s = String(str || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+  if (/kiri.*atas|atas.*kiri|top.*left|left.*top/.test(s)) return 'top_left';
+  if (/kanan.*atas|atas.*kanan|top.*right|right.*top/.test(s)) return 'top_right';
+  if (/kiri.*bawah|bawah.*kiri|bottom.*left|left.*bottom/.test(s)) return 'bottom_left';
+  if (/kanan.*bawah|bawah.*kanan|bottom.*right|right.*bottom/.test(s)) return 'bottom_right';
+  if (/kiri|left/.test(s)) return 'left';
+  if (/kanan|right/.test(s)) return 'right';
+  if (/atas|top|up/.test(s)) return 'top';
+  if (/bawah|bottom|down/.test(s)) return 'bottom';
+  if (/tengah|center|middle/.test(s)) return 'center';
+  if (/asal|home|awal|balik|semula/.test(s)) return 'home';
+  return 'away';
+}
+
+/** Memilih target di area spesifik (kiri, kanan, atas, bawah, pojok, tengah, dll.) */
+function pickTargetForArea(from, wa, cursor, home, areaInput, rng = Math.random, size = { width: WIN_W, height: WIN_H }) {
+  const area = normalizeArea(areaInput);
+  if (area === 'home' && home) return { ...home };
+
+  const L = limits(wa, size);
+  const W = L.maxX - L.minX;
+  const H = L.maxY - L.minY;
+  if (W < 100 || H < 50) return null;
+
+  let xMin = L.minX, xMax = L.maxX;
+  let yMin = L.minY, yMax = L.maxY;
+
+  const leftMax = L.minX + W * 0.35;
+  const rightMin = L.maxX - W * 0.35;
+  const topMax = L.minY + H * 0.35;
+  const bottomMin = L.maxY - H * 0.35;
+
+  switch (area) {
+    case 'left':
+      xMin = L.minX; xMax = leftMax;
+      break;
+    case 'right':
+      xMin = rightMin; xMax = L.maxX;
+      break;
+    case 'top':
+      yMin = L.minY; yMax = topMax;
+      break;
+    case 'bottom':
+      yMin = bottomMin; yMax = L.maxY;
+      break;
+    case 'top_left':
+      xMin = L.minX; xMax = leftMax;
+      yMin = L.minY; yMax = topMax;
+      break;
+    case 'top_right':
+      xMin = rightMin; xMax = L.maxX;
+      yMin = L.minY; yMax = topMax;
+      break;
+    case 'bottom_left':
+      xMin = L.minX; xMax = leftMax;
+      yMin = bottomMin; yMax = L.maxY;
+      break;
+    case 'bottom_right':
+      xMin = rightMin; xMax = L.maxX;
+      yMin = bottomMin; yMax = L.maxY;
+      break;
+    case 'center':
+      xMin = L.minX + W * 0.30; xMax = L.maxX - W * 0.30;
+      yMin = L.minY + H * 0.30; yMax = L.maxY - H * 0.30;
+      break;
+    case 'away':
+    default: {
+      const isRight = from.x > (L.minX + L.maxX) / 2;
+      const isBottom = from.y > (L.minY + L.maxY) / 2;
+      if (isRight) { xMin = L.minX; xMax = leftMax; }
+      else { xMin = rightMin; xMax = L.maxX; }
+      if (isBottom) { yMin = L.minY; yMax = topMax; }
+      else { yMin = bottomMin; yMax = L.maxY; }
+      break;
+    }
+  }
+
+  for (let i = 0; i < 15; i++) {
+    const x = Math.round(clamp(xMin + rng() * (xMax - xMin), L.minX, L.maxX));
+    const y = Math.round(clamp(yMin + rng() * (yMax - yMin), L.minY, L.maxY));
+    const d = Math.hypot(x - from.x, y - from.y);
+    if (d < 140 && area !== 'center') continue;
+    if (cursor && Math.hypot(x - cursor.x, y - cursor.y) < 200) continue;
+    return { x, y };
+  }
+
+  return {
+    x: Math.round(clamp((xMin + xMax) / 2, L.minX, L.maxX)),
+    y: Math.round(clamp((yMin + yMax) / 2, L.minY, L.maxY))
+  };
+}
+
 /** Titik pada kurva Bezier kuadrat. */
 function bezier(p0, c, p1, t) {
   const u = 1 - t;
@@ -86,20 +180,19 @@ function createRoamer(o) {
     return now() - lastFlightAt >= cooldown();
   }
 
-  function fly(reason) {
-    if (!canFly()) return false;
+  function flyTo(to, reason = 'perintah') {
     const w = o.getWin();
+    if (!w || w.isDestroyed() || !w.isVisible()) return false;
+    cancel();
+
     const b = w.getBounds();
     const from = anchorOf(b);
     const wa = o.getWorkArea(from);
-    const cursor = o.getCursor?.();
     const size = { width: b.width, height: b.height };
     const L = limits(wa, size);
-    const to = pickTarget(from, wa, cursor, o.getHome?.(), rng, size);
-    if (!to) return false;
 
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
-    const dur = clamp(dist / 900 * 1000 + 500, 900, 2400) * scale;
+    const dur = clamp(dist / 900 * 1000 + 450, 800, 2200) * scale;
     const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
     const arc = Math.min(200, dist * .38) * (.6 + rng() * .6);
     const ctrl = { x: mid.x + (rng() - .5) * dist * .25, y: mid.y - arc };
@@ -136,6 +229,32 @@ function createRoamer(o) {
     };
     flying = { timer: T.setInterval(step, o.frameMs || 16), cancel: () => finish(false) };
     return true;
+  }
+
+  function fly(reason) {
+    if (!canFly()) return false;
+    const w = o.getWin();
+    const b = w.getBounds();
+    const from = anchorOf(b);
+    const wa = o.getWorkArea(from);
+    const cursor = o.getCursor?.();
+    const size = { width: b.width, height: b.height };
+    const to = pickTarget(from, wa, cursor, o.getHome?.(), rng, size);
+    if (!to) return false;
+    return flyTo(to, reason);
+  }
+
+  function flyToArea(areaInput) {
+    const w = o.getWin();
+    if (!w || w.isDestroyed() || !w.isVisible()) return false;
+    const b = w.getBounds();
+    const from = anchorOf(b);
+    const wa = o.getWorkArea(from);
+    const cursor = o.getCursor?.();
+    const size = { width: b.width, height: b.height };
+    const to = pickTargetForArea(from, wa, cursor, o.getHome?.(), areaInput, rng, size);
+    if (!to) return false;
+    return flyTo(to, `perintah:${areaInput}`);
   }
 
   function cancel() { flying?.cancel(); }
@@ -179,7 +298,7 @@ function createRoamer(o) {
     T.clearInterval(pollTimer);
   }
 
-  return { start, stop, fly, cancel, nudge, isFlying: () => Boolean(flying), _canFly: canFly };
+  return { start, stop, fly, flyTo, flyToArea, cancel, nudge, isFlying: () => Boolean(flying), _canFly: canFly };
 }
 
-module.exports = { createRoamer, pickTarget, bezier, bezierDir, limits, anchorOf, boundsFor, WIN_W, WIN_H };
+module.exports = { createRoamer, pickTarget, pickTargetForArea, normalizeArea, bezier, bezierDir, limits, anchorOf, boundsFor, WIN_W, WIN_H };
