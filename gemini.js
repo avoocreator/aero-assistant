@@ -1,7 +1,7 @@
 // Klien Gemini API (REST) dengan Server-Sent Events (SSE) streaming langsung.
 const BASE = process.env.GEMINI_BASE || 'https://generativelanguage.googleapis.com/v1beta/models';
 const IDLE_MS = 30000;
-const EMOTIONS = ['neutral', 'happy', 'thinking', 'surprised', 'sad'];
+const EMOTIONS = ['neutral', 'happy', 'excited', 'thinking', 'curious', 'surprised', 'sad', 'love', 'playful', 'sleepy', 'annoyed'];
 
 // ---------- System Prompt ----------
 function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
@@ -10,11 +10,13 @@ function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
     '',
     'FORMAT BALASAN (WAJIB, persis begini, tanpa teks apa pun sebelum baris pertama):',
     '@heard: <transkrip kata-demi-kata dari rekaman suara pengguna dalam Bahasa Indonesia/istilah teknologi; kosongkan bila pengguna mengetik>',
-    '@emotion: <salah satu: neutral, happy, thinking, surprised, sad>',
+    '@emotion: <salah satu: neutral, happy, excited, thinking, curious, surprised, sad, love, playful, sleepy, annoyed>',
     agentEnabled ? '@delegate: <tugas riset mendalam untuk agen latar belakang, atau kosongkan>' : null,
     actionsEnabled ? '@action: <satu objek JSON aksi komputer; boleh diulang, satu baris per aksi; hapus baris ini bila tidak ada aksi>' : null,
     '---',
     '<jawaban lisanmu>',
+    '',
+    'EKSPRESI: pilih @emotion yang paling cocok dengan isi jawabanmu supaya wajahmu hidup. happy = senang/berhasil, excited = sangat antusias, curious = penasaran atau bertanya balik, surprised = kaget, sad = maaf/gagal/kabar buruk, love = pujian atau terima kasih hangat, playful = bercanda/menggoda, annoyed = kesal ringan atau menegur, sleepy = ngantuk (jarang), thinking = sedang menimbang, neutral = datar/faktual. Jangan selalu neutral.',
     '',
     'ATURAN JAWABAN LISAN:',
     '- Balas dalam bahasa yang dipakai pengguna (default Bahasa Indonesia santai dan ramah). Jawaban harus ringkas (1-3 kalimat) karena akan LANGSUNG DIUCAPKAN lewat suara (TTS). Untuk kalkulasi atau kode, jelaskan intinya.',

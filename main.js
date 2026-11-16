@@ -9,6 +9,7 @@ const { AgentManager } = require('./agent');
 const actions = require('./actions');
 const { UiaBridge } = require('./uia');
 const { Operator } = require('./operator');
+const { createRoamer, anchorOf } = require('./roam');
 const edgeTts = require('./edge-tts');
 
 // ---------- Muat Variabel Lingkungan ----------
@@ -49,6 +50,7 @@ let config = {
   maxHistoryTurns: 8,
   hotkey: 'F9',
   actionsEnabled: true,
+  roam: { enabled: true, minSec: 50, maxSec: 160, cooldownSec: 30, activityChance: 0.05 },
   operatorMaxSteps: 14,
   operatorThinking: 'balanced',
   operatorMode: 'live',
@@ -82,6 +84,9 @@ app.on('second-instance', () => showWindow());
 
 let win = null;
 let cursorWin = null;
+let roamer = null;
+let uiBusy = false;
+let homeAnchor = null;
 let tray = null;
 let history = [];
 let agents = null;
@@ -194,7 +199,21 @@ function createWindow() {
 
   createCursorOverlay();
 
+  homeAnchor = anchorOf(win.getBounds());
+  roamer?.stop();
+  roamer = createRoamer({
+    config: () => config,
+    getWin: () => win,
+    getCursor: () => screen.getCursorScreenPoint(),
+    getWorkArea: p => screen.getDisplayNearestPoint({ x: Math.round(p.x), y: Math.round(p.y) }).workArea,
+    getHome: () => homeAnchor,
+    isBusy: () => uiBusy || Boolean(typeof opCtrl !== 'undefined' && opCtrl),
+    send: ev => send('fly', ev)
+  });
+  roamer.start();
+
   win.on('closed', () => {
+    roamer?.stop();
     win = null;
     if (cursorWin && !cursorWin.isDestroyed()) {
       cursorWin.close();
@@ -312,6 +331,7 @@ async function runTask(task) {
         }
         console.log(`[Tugas Cepat Selesai] ${res.summary}`);
         send('action-event', { ok: true, type: task.kind, label: res.summary });
+      roamer?.nudge('tugas', 0.5);
         return;
       }
       console.warn('[Jalur cepat alarm gagal, fallback ke Operator]', res?.error);
@@ -450,6 +470,15 @@ ipcMain.handle('ask-stream', async (e, { id, text, audioB64, audioMime }) => {
 ipcMain.on('cancel-ask', (_e, id) => asks.get(id)?.abort());
 ipcMain.on('agent-cancel', (_e, id) => agents?.cancel(id));
 ipcMain.on('cancel-operator', () => cancelOperator());
+let busySince = 0;
+ipcMain.on('ui-busy', (_e, busy) => {
+  const was = uiBusy;
+  uiBusy = Boolean(busy);
+  if (uiBusy && !was) busySince = Date.now();
+  // selesai ngobrol: kadang Aero langsung terbang sendiri
+  if (was && !uiBusy && Date.now() - busySince > 4000) roamer?.nudge('selesai', 0.2);
+});
+ipcMain.on('fly-cancel', () => roamer?.cancel());
 
 ipcMain.handle('tts-edge', async (_e, text) => {
   try {
@@ -535,6 +564,12 @@ function buildTrayMenu() {
       type: 'checkbox',
       checked: autostartOn(),
       click: m => setAutostart(m.checked)
+    },
+    {
+      label: 'Terbang Sendiri (berpindah tempat)',
+      type: 'checkbox',
+      checked: config.roam?.enabled !== false,
+      click: m => { config.roam = { ...config.roam, enabled: m.checked }; if (!m.checked) roamer?.cancel(); }
     },
     {
       label: `Hentikan Aksi Komputer (${config.stopHotkey})`,

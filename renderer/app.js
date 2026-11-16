@@ -710,6 +710,41 @@
   // =====================================================================
   //  KONTROL TOOLBAR & INTERAKSI
   // =====================================================================
+
+  // =====================================================================
+  //  TERBANG & EKSPRESI SPONTAN
+  // =====================================================================
+  // Beri tahu proses utama kapan Aero sedang "sibuk" (mendengar, berpikir, bicara, ada bubble, kolom ketik terbuka,
+  // kursor di atas Aero) supaya dia tidak terbang di tengah interaksi.
+  let hoverUi = false;
+  let lastBusy = null;
+  const computeBusy = () =>
+    state !== 'idle' || !aeroBub.classList.contains('hidden') || !userBub.classList.contains('hidden') ||
+    !typeForm.classList.contains('hidden') || hoverUi || tasksEl.childElementCount > 0;
+  setInterval(() => {
+    const b = computeBusy();
+    if (b !== lastBusy) { lastBusy = b; api.reportBusy?.(b); }
+  }, 300);
+
+  document.addEventListener('mousemove', e => { hoverUi = Boolean(e.target.closest?.('.interactive, .bub, .chip')); });
+  document.addEventListener('mouseleave', () => { hoverUi = false; });
+  // Pengguna menyentuh Aero saat terbang: batalkan supaya bisa diraih.
+  document.addEventListener('mousedown', () => api.flyCancel?.());
+
+  api.onFly?.(ev => {
+    if (ev.kind === 'start') window.Avatar?.fly(ev.dx, ev.dy);
+    else if (ev.kind === 'dir') window.Avatar?.fly(ev.dx, ev.dy);
+    else if (ev.kind === 'end') window.Avatar?.land();
+  });
+
+  // Disentuh kursor: senang sebentar.
+  let lastGreet = 0;
+  stage.addEventListener('mouseenter', () => {
+    if (state !== 'idle' || Date.now() - lastGreet < 6000) return;
+    lastGreet = Date.now();
+    window.Avatar?.react(Math.random() < .25 ? 'love' : Math.random() < .5 ? 'happy' : 'playful', 1300);
+  });
+
   stage.addEventListener('click', toggleListening);
   btnMic.addEventListener('click', toggleListening);
   api.onHotkey(toggleListening);

@@ -36,5 +36,12 @@
   "operatorMaxSteps": 14,
   "operatorThinking": "fast",
   "operatorMode": "live",
-  "stopHotkey": "Ctrl+Alt+X"
+  "stopHotkey": "Ctrl+Alt+X",
+  "roam": {
+    "enabled": true,
+    "minSec": 50,
+    "maxSec": 160,
+    "cooldownSec": 30,
+    "activityChance": 0.05
+  }
 }

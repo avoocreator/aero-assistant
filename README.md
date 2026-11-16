@@ -105,3 +105,19 @@ Keselamatan:
 
 Pengaturan di `config.json`: `operatorMaxSteps` (14), `operatorThinking` (`fast|balanced|deep`, bawaan `balanced`), `operatorMode` (`live|background`), `stopHotkey`.
 Saat model utama kehabisan kuota dan jatuh ke model lite, ketelitian operator ikut turun; pakai `deep` bila perlu.
+
+## Ekspresi & Terbang
+
+**Ekspresi.** Wajah Aero dibentuk dari bagian terpisah: bentuk mata, alis, mulut, posisi telinga, badan, dan partikel. Ada 11 mood: `neutral, happy, excited, thinking, curious, surprised, sad, love, playful, sleepy, annoyed`. Model memilih mood lewat `@emotion` sesuai isi jawabannya. Contoh: mata hati dan hati melayang (love), mata bintang dan lompat (excited), alis miring dan telinga turun (sad/annoyed), tanda tanya dan telinga miring (curious).
+
+**Kebiasaan sendiri.** Saat diam, Aero kadang (bukan terus-menerus, jeda 3,5-9 detik) melirik ke samping, kedip ganda, kedip sebelah, penasaran, tersenyum, bersenandung, atau melompat kecil. Setelah lama tidak ada aktivitas ia menguap lalu tertidur (zzz) dan terbangun kaget saat disentuh. Menyentuh Aero dengan kursor memancing reaksi senang.
+
+**Terbang berpindah tempat** (`roam.js`). Aero kadang terbang ke tempat lain di layar lewat lintasan melengkung, dengan pose terbang (condong ke arah gerak, telinga mengepak, garis kecepatan) dan mendarat dengan penyok kecil dan percikan.
+- Kapan: acak setiap ~50-160 detik, tiba-tiba saat kamu sedang beraktivitas (mouse bergerak), dan kadang setelah selesai ngobrol atau menyelesaikan tugas.
+- Tidak pernah saat mendengar/berpikir/bicara, ada bubble atau tugas, kolom ketik terbuka, kursor di atas Aero, atau Operator bekerja. Klik Aero saat terbang untuk menangkapnya.
+- Tujuan selalu aman: jendela tetap utuh di layar, ada ruang untuk bubble, dan tidak mendarat di dekat kursor.
+- Matikan lewat menu tray ("Terbang Sendiri") atau `config.json`:
+
+```json
+"roam": { "enabled": true, "minSec": 50, "maxSec": 160, "cooldownSec": 30, "activityChance": 0.05 }
+```
