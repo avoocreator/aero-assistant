@@ -164,230 +164,130 @@ async function spotifySearch(query) {
   return `Membuka pencarian Spotify: ${query}`;
 }
 
-// ---------- Otomasi Alarm & Timer ----------
-async function setAlarm(timeStr, label = 'Alarm Aero') {
-  const cleanTime = String(timeStr || '').replace(/\s+/g, '').replace('.', ':');
-  const m = cleanTime.match(/(\d{1,2}):(\d{2})/);
-  if (!m) throw new Error('Format waktu alarm harus jam:menit, misal 12:00 atau 07.30.');
-  const h = parseInt(m[1], 10);
-  const min = parseInt(m[2], 10);
-  if (h < 0 || h > 23 || min < 0 || min > 59) throw new Error('Jam atau menit di luar rentang (00:00 - 23:59).');
+// ---------- Tugas untuk Operator (kontrol UI nyata) ----------
+// Aksi di bawah tidak lagi menekan tombol buta. Aksi diubah jadi "tujuan" yang dikerjakan Operator
+// dengan membaca UI aplikasi sungguhan, memilih elemen yang tepat, dan memverifikasi hasilnya (lihat operator.js).
+const MEDIA_BUTTON = /^(play|pause|putar|jeda|stop|next|lanjut|berikutnya|skip|prev|previous|sebelumnya)$/i;
 
-  const formatted = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-  const now = new Date();
-  const target = new Date();
+function parseTime(timeStr) {
+  const m = String(timeStr || '').replace(/\s+/g, '').replace('.', ':').match(/(\d{1,2}):(\d{2})/);
+  if (!m) throw new Error('Format waktu alarm harus jam:menit, misal 12:00 atau 07.30.');
+  const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) throw new Error('Jam atau menit di luar rentang (00:00 - 23:59).');
+  return { h, min, text: `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}` };
+}
+
+function alarmGoal(timeStr, label) {
+  const t = parseTime(timeStr);
+  const name = clean(label).slice(0, 60);
+  return {
+    kind: 'alarm',
+    title: `Alarm ${t.text}`,
+    time: { h: t.h, min: t.min, text: t.text, label: name },
+    goal: `Set an alarm for ${t.text} (24-hour clock; if the time picker uses AM/PM, set the equivalent, e.g. 12:00 = 12 PM, 00:00 = 12 AM) in the Windows Clock app (it may be named "Clock", "Alarms & Clock" or "Jam"). ` +
+      `It MUST be done in the ALARM tab/page, NOT in Timer, Stopwatch or World clock: first make sure the Alarm tab shows as selected. ` +
+      `If an alarm at that exact time already exists, just make sure it is turned On. Otherwise add a new alarm, set the hour and minute carefully, ${name ? `name it "${name}", ` : ''}and save. ` +
+      `Finish only after the alarm list shows an alarm at ${t.text} that is turned On, and say what you saw.`,
+    reminder: { delaySec: secondsUntil(t.h, t.min), title: `Alarm ${t.text}`, body: name || 'Waktunya tiba.' }
+  };
+}
+
+function secondsUntil(h, min) {
+  const now = new Date(), target = new Date();
   target.setHours(h, min, 0, 0);
   if (target <= now) target.setDate(target.getDate() + 1);
-  const diffSec = Math.max(1, Math.round((target.getTime() - now.getTime()) / 1000));
-
-  if (IS_WIN) {
-    const h1 = String(h).length > 1 ? String(h)[0] : '0';
-    const h2 = String(h).length > 1 ? String(h)[1] : String(h)[0];
-    const m1 = String(min).padStart(2, '0')[0];
-    const m2 = String(min).padStart(2, '0')[1];
-
-    const psAutomateClock = `
-      Start-Process "ms-clock:alarm"
-      Start-Sleep -Milliseconds 1300
-
-      Add-Type -TypeDefinition @"
-      using System;
-      using System.Runtime.InteropServices;
-      using System.Threading;
-
-      public class ClockBot {
-          [DllImport("user32.dll")]
-          public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-          const uint KEYUP = 0x0002;
-
-          public static void Tap(byte vk) {
-              keybd_event(vk, 0, 0, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(vk, 0, KEYUP, UIntPtr.Zero);
-              Thread.Sleep(60);
-          }
-
-          public static void Shortcut(byte mod, byte key) {
-              keybd_event(mod, 0, 0, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(key, 0, 0, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(key, 0, KEYUP, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(mod, 0, KEYUP, UIntPtr.Zero);
-              Thread.Sleep(80);
-          }
-
-          public static void TypeChar(char c) {
-              if (c >= '0' && c <= '9') {
-                  Tap((byte)(0x30 + (c - '0')));
-              }
-          }
-      }
-"@
-
-      # 1. Buka form Add Alarm dengan Ctrl+N
-      [ClockBot]::Shortcut(0x11, 0x4E)
-      Start-Sleep -Milliseconds 800
-
-      # 2. Masukkan jam
-      [ClockBot]::TypeChar([char]'${h1}')
-      [ClockBot]::TypeChar([char]'${h2}')
-      Start-Sleep -Milliseconds 300
-
-      # 3. Pindah ke kolom menit
-      [ClockBot]::Tap(0x09)
-      Start-Sleep -Milliseconds 300
-
-      # 4. Masukkan menit
-      [ClockBot]::TypeChar([char]'${m1}')
-      [ClockBot]::TypeChar([char]'${m2}')
-      Start-Sleep -Milliseconds 300
-
-      # 5. Simpan alarm (Ctrl+S lalu Enter)
-      [ClockBot]::Shortcut(0x11, 0x53)
-      Start-Sleep -Milliseconds 350
-      [ClockBot]::Tap(0x0D)
-    `;
-
-    // Jalankan automasi nyata ke Clock app
-    ps(psAutomateClock).catch(e => console.warn('Clock bot error:', e.message));
-
-    // Backup: jadwal notifikasi alarm mandiri
-    const psDetached = `Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile", "-Command", "Start-Sleep -Seconds ${diffSec}; try { [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; \\$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); \\$texts = \\$template.GetElementsByTagName('text'); \\$texts.Item(0).AppendChild(\\$template.CreateTextNode('⏰ Alarm ${formatted}')) | Out-Null; \\$texts.Item(1).AppendChild(\\$template.CreateTextNode('Waktu ${formatted} telah tiba (${clean(label) || 'Aero'}).')) | Out-Null; \\$toast = [Windows.UI.Notifications.ToastNotification]::new(\\$template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aero Assistant').Show(\\$toast); } catch {}; [System.Media.SystemSounds]::Exclamation.Play()"`;
-    await ps(psDetached).catch(() => {});
-  }
-
-  return {
-    label: `Alarm berhasil disetel untuk pukul ${formatted}`,
-    cursorSteps: [
-      { action: 'click', label: 'Tambah Alarm (+)', relX: 0.72, relY: 0.80, duration: 1100 },
-      { action: 'type', label: `Setel ${formatted}`, relX: 0.50, relY: 0.45, duration: 1100 },
-      { action: 'click', label: 'Simpan Alarm', relX: 0.52, relY: 0.62, duration: 900 }
-    ]
-  };
+  return Math.max(1, Math.round((target - now) / 1000));
 }
 
-async function setTimer(minutes, seconds = 0, label = 'Timer Aero') {
+function timerGoal(minutes, seconds, label) {
   const m = Math.max(0, parseInt(minutes, 10) || 0);
   const s = Math.max(0, parseInt(seconds, 10) || 0);
-  const totalSec = m * 60 + s;
-  if (totalSec <= 0) throw new Error('Durasi timer harus lebih dari 0 detik.');
-
-  if (IS_WIN) {
-    const psAutomateTimer = `
-      Start-Process "ms-clock:timer"
-      Start-Sleep -Milliseconds 1300
-
-      Add-Type -TypeDefinition @"
-      using System;
-      using System.Runtime.InteropServices;
-      using System.Threading;
-
-      public class TimerBot {
-          [DllImport("user32.dll")]
-          public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-          const uint KEYUP = 0x0002;
-
-          public static void Shortcut(byte mod, byte key) {
-              keybd_event(mod, 0, 0, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(key, 0, 0, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(key, 0, KEYUP, UIntPtr.Zero);
-              Thread.Sleep(60);
-              keybd_event(mod, 0, KEYUP, UIntPtr.Zero);
-              Thread.Sleep(80);
-          }
-      }
-"@
-      [TimerBot]::Shortcut(0x11, 0x4E)
-      Start-Sleep -Milliseconds 600
-      [TimerBot]::Shortcut(0x11, 0x53)
-    `;
-    ps(psAutomateTimer).catch(e => console.warn('Timer bot error:', e.message));
-
-    const psDetached = `Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile", "-Command", "Start-Sleep -Seconds ${totalSec}; try { [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; \\$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); \\$texts = \\$template.GetElementsByTagName('text'); \\$texts.Item(0).AppendChild(\\$template.CreateTextNode('⏳ Timer Selesai (${m}m ${s}s)')) | Out-Null; \\$texts.Item(1).AppendChild(\\$template.CreateTextNode('Waktu timer ${clean(label) || 'Aero'} telah habis.')) | Out-Null; \\$toast = [Windows.UI.Notifications.ToastNotification]::new(\\$template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aero Assistant').Show(\\$toast); } catch {}; [System.Media.SystemSounds]::Exclamation.Play()"`;
-    await ps(psDetached).catch(() => {});
-  }
-
+  const total = m * 60 + s;
+  if (total <= 0) throw new Error('Durasi timer harus lebih dari 0 detik.');
+  const hh = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60;
+  const dur = `${hh}h ${mm}m ${ss}s`;
   return {
-    label: `Timer dipasang untuk ${m} menit ${s} detik`,
-    cursorSteps: [
-      { action: 'click', label: 'Tambah Timer (+)', relX: 0.72, relY: 0.80, duration: 1000 },
-      { action: 'click', label: `Nyalakan Timer ${m}m`, relX: 0.52, relY: 0.62, duration: 900 }
-    ]
+    kind: 'timer',
+    title: `Timer ${m}m ${s}s`,
+    timer: { hours: hh, minutes: mm, seconds: ss, label: clean(label) },
+    goal: `Start a countdown timer of ${dur} in the Windows Clock app (it may be named "Clock", "Alarms & Clock" or "Jam"). ` +
+      `It MUST be done in the TIMER tab/page, NOT in Alarm or Stopwatch: first make sure the Timer tab shows as selected. ` +
+      `Add or choose a timer, set hours/minutes/seconds to ${dur} carefully${clean(label) ? `, name it "${clean(label).slice(0, 60)}"` : ''}, and start it. ` +
+      `Finish only after you see a timer counting down at about that duration, and say what you saw.`,
+    reminder: { delaySec: total, title: `Timer selesai (${m}m ${s}s)`, body: clean(label) || 'Waktu timer habis.' }
   };
 }
 
-// ---------- Kontrol UI Interaktif & Pembaca Latar Belakang ----------
-async function clickUi(app, button) {
-  const btn = clean(button).toLowerCase();
-  const targetApp = clean(app);
+/** Ubah aksi dari model menjadi tugas Operator, atau null bila itu aksi biasa. */
+function toTask(a) {
+  const mode = String(a?.mode || '').toLowerCase() === 'background' ? 'background' : 'live';
+  switch (String(a?.type || '')) {
+    case 'do_task': {
+      const goal = clean(a.goal).slice(0, 600);
+      if (!goal) throw new Error('Tujuan tugas kosong.');
+      return { kind: 'task', title: goal.slice(0, 40), goal, mode };
+    }
+    case 'set_alarm': return { ...alarmGoal(a.time, a.label), mode };
+    case 'set_timer': return { ...timerGoal(a.minutes, a.seconds, a.label), mode };
+    case 'click_ui': {
+      const btn = clean(a.button || a.target);
+      if (MEDIA_BUTTON.test(btn)) return null;     // play/pause/next ditangani tombol media sistem
+      const app = clean(a.app);
+      return { kind: 'task', title: `Klik ${btn}`, mode, goal: `In ${app ? `the app "${app}"` : 'the active app'}, find the control labelled "${btn}" and activate it. Verify the result on screen before finishing.` };
+    }
+    case 'type_text': {
+      const text = String(a.text || '').slice(0, 500);
+      if (!text) throw new Error('Teks yang ingin diketik tidak boleh kosong.');
+      const app = clean(a.app);
+      return { kind: 'task', title: 'Mengetik', mode: 'live', goal: `Type exactly this text (verbatim, as one string) into the appropriate text field of ${app ? `the app "${app}"` : 'the active window'}: ${JSON.stringify(text)}. Click the field first so it has focus, then verify the text appears.` };
+    }
+    default: return null;
+  }
+}
 
-  if (/^(play|pause|putar|jeda|stop)$/i.test(btn)) {
-    await mediaKey('play_pause');
-    return {
-      label: `Memutar/menjeda media (${targetApp || 'sistem'})`,
-      cursor: { action: 'click', label: `Play/Pause ${targetApp || ''}` }
-    };
-  }
-  if (/^(next|lanjut|berikutnya|skip)$/i.test(btn)) {
-    await mediaKey('next');
-    return {
-      label: `Memutar track berikutnya`,
-      cursor: { action: 'click', label: `Next Track` }
-    };
-  }
-  if (/^(prev|previous|sebelumnya)$/i.test(btn)) {
-    await mediaKey('previous');
-    return {
-      label: `Memutar track sebelumnya`,
-      cursor: { action: 'click', label: `Previous Track` }
-    };
-  }
-
-  return {
-    label: `Mengklik tombol "${button}" di ${targetApp || 'aplikasi'}`,
-    cursor: { action: 'click', label: `Klik ${button}` }
-  };
+// Cadangan jujur kalau Operator gagal: notifikasi Windows pada waktunya (bukan alarm aplikasi Jam).
+// Teks dikirim lewat variabel lingkungan dan skrip -EncodedCommand, jadi tidak bisa disisipi perintah.
+async function scheduleReminder({ delaySec, title, body }) {
+  if (!IS_WIN) return false;
+  const inner = `
+    Start-Sleep -Seconds ([int]$env:AGY_DELAY)
+    try {
+      [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+      $t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+      $x = $t.GetElementsByTagName('text')
+      $x.Item(0).AppendChild($t.CreateTextNode($env:AGY_TITLE)) | Out-Null
+      $x.Item(1).AppendChild($t.CreateTextNode($env:AGY_BODY)) | Out-Null
+      [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aero Assistant').Show([Windows.UI.Notifications.ToastNotification]::new($t))
+    } catch {}
+    [System.Media.SystemSounds]::Exclamation.Play()
+    Start-Sleep -Seconds 3`;
+  const enc = Buffer.from(inner, 'utf16le').toString('base64');
+  spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', enc], {
+    env: { ...process.env, AGY_DELAY: String(delaySec), AGY_TITLE: String(title).slice(0, 80), AGY_BODY: String(body).slice(0, 160) },
+    detached: true, stdio: 'ignore', windowsHide: true
+  }).unref();
+  return true;
 }
 
 async function readWindow(appName) {
   const q = clean(appName);
   if (!q) throw new Error('Nama aplikasi untuk dibaca tidak boleh kosong.');
   if (!IS_WIN) throw new Error('Fitur membaca jendela latar belakang saat ini didukung di Windows.');
-
   const out = await ps(
     '$q = $env:AGY_APP;' +
     '$p = Get-Process | Where-Object { $_.MainWindowTitle -and ($_.ProcessName -like ("*" + $q + "*") -or $_.MainWindowTitle -like ("*" + $q + "*")) } | Select-Object -First 3;' +
     'if ($p) { $lines = foreach ($x in $p) { "$($x.ProcessName): $($x.MainWindowTitle)" }; $lines -join " | " } else { "Tidak ditemukan jendela aktif untuk " + $q }',
     { AGY_APP: q }
   );
-
-  return {
-    label: `Membaca jendela ${appName}: ${out}`,
-    text: out,
-    cursor: { action: 'click', label: `Baca Jendela ${appName}` }
-  };
+  return { label: `Membaca jendela ${appName}: ${out}`, text: out };
 }
 
-async function typeText(text, app) {
-  const t = String(text || '').slice(0, 500);
-  if (!t) throw new Error('Teks yang ingin diketik tidak boleh kosong.');
-
-  if (IS_WIN) {
-    await ps(
-      'Add-Type -AssemblyName System.Windows.Forms;' +
-      '[System.Windows.Forms.SendKeys]::SendWait($env:AGY_TEXT)',
-      { AGY_TEXT: t }
-    );
-  }
-
-  return {
-    label: `Mengetik: "${t.slice(0, 35)}${t.length > 35 ? '...' : ''}"`,
-    cursor: { action: 'type', label: `Ketik: ${t.slice(0, 20)}` }
-  };
+async function clickMedia(button) {
+  const btn = clean(button).toLowerCase();
+  if (/^(play|pause|putar|jeda|stop)$/.test(btn)) { await mediaKey('play_pause'); return 'Memutar/menjeda media'; }
+  if (/^(next|lanjut|berikutnya|skip)$/.test(btn)) { await mediaKey('next'); return 'Track berikutnya'; }
+  await mediaKey('previous');
+  return 'Track sebelumnya';
 }
 
 // ---------- Pintu Masuk ----------
@@ -396,33 +296,21 @@ async function runAction(a, opts = {}) {
     const type = String(a?.type || '');
     const custom = opts.apps;
     switch (type) {
-      case 'set_alarm': {
-        const r = await setAlarm(a.time, a.label);
-        return { ok: true, label: r.label, cursor: r.cursor, cursorSteps: r.cursorSteps };
-      }
-      case 'set_timer': {
-        const r = await setTimer(a.minutes, a.seconds, a.label);
-        return { ok: true, label: r.label, cursor: r.cursor, cursorSteps: r.cursorSteps };
-      }
       case 'click_ui': {
-        const r = await clickUi(clean(a.app), clean(a.button || a.target));
-        return { ok: true, label: r.label, cursor: r.cursor };
+        if (!MEDIA_BUTTON.test(clean(a.button || a.target))) throw new Error('click_ui non-media dijalankan oleh Operator.');
+        return { ok: true, label: await clickMedia(a.button || a.target) };
       }
       case 'read_window': {
         const r = await readWindow(clean(a.app));
-        return { ok: true, label: r.label, cursor: r.cursor, text: r.text };
+        return { ok: true, label: r.label, text: r.text };
       }
-      case 'type_text': {
-        const r = await typeText(clean(a.text), clean(a.app));
-        return { ok: true, label: r.label, cursor: r.cursor };
-      }
-      case 'open_app': return { ok: true, label: await openApp(clean(a.app), custom), cursor: { action: 'click', label: `Buka ${clean(a.app)}` } };
+      case 'open_app': return { ok: true, label: await openApp(clean(a.app), custom) };
       case 'close_app': return { ok: true, label: await closeApp(clean(a.app), custom) };
       case 'open_url': {
         const url = validUrl(a.url);
         if (!url) throw new Error('Alamat web tidak valid (hanya http/https).');
         await openUrl(url, a.browser);
-        return { ok: true, label: `Membuka ${new URL(url).hostname}`, cursor: { action: 'click', label: `Buka Web` } };
+        return { ok: true, label: `Membuka ${new URL(url).hostname}` };
       }
       case 'search': {
         const q = clean(a.query).slice(0, QUERY_MAX);
@@ -430,20 +318,20 @@ async function runAction(a, opts = {}) {
         const site = SEARCH[String(a.site || 'google').toLowerCase()];
         if (!site) throw new Error('Situs pencarian tidak dikenal.');
         await openUrl(site(q), a.browser);
-        return { ok: true, label: `Mencari "${q}"`, cursor: { action: 'click', label: `Cari "${q.slice(0, 15)}"` } };
+        return { ok: true, label: `Mencari "${q}"` };
       }
       case 'youtube_play': {
         const q = clean(a.query).slice(0, QUERY_MAX);
         if (!q) throw new Error('Kata kunci video kosong.');
         await openUrl(YT_FIRST(q), a.browser);
-        return { ok: true, label: `Membuka video: ${q}`, cursor: { action: 'click', label: `Buka Video` } };
+        return { ok: true, label: `Membuka video: ${q}` };
       }
       case 'spotify_search': {
         const q = clean(a.query).slice(0, QUERY_MAX);
         if (!q) throw new Error('Kata kunci lagu kosong.');
-        return { ok: true, label: await spotifySearch(q), cursor: { action: 'click', label: `Cari Lagu` } };
+        return { ok: true, label: await spotifySearch(q) };
       }
-      case 'media': return { ok: true, label: await mediaKey(String(a.key)), cursor: { action: 'click', label: `Media: ${a.key}` } };
+      case 'media': return { ok: true, label: await mediaKey(String(a.key)) };
       default: throw new Error(`Aksi "${type}" tidak dikenal.`);
     }
   } catch (e) {
@@ -460,4 +348,4 @@ async function runActions(list, opts = {}) {
   return out;
 }
 
-module.exports = { runAction, runActions, validUrl, BUILTIN_APPS, PROTECTED, YT_FIRST, SEARCH };
+module.exports = { runAction, runActions, toTask, scheduleReminder, openApp, validUrl, BUILTIN_APPS, PROTECTED, YT_FIRST, SEARCH };

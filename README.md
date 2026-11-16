@@ -85,3 +85,23 @@ Setelah itu, kamu bisa memanggil Aero kapan saja dengan menekan `Win + R`, ketik
 ## 📄 Lisensi
 
 MIT License © 2026 Kira ([Avoo Creator](https://github.com/avoocreator))
+
+## Operator Komputer (kursor yang benar-benar bekerja)
+
+Aksi seperti "aturkan alarm jam 12" atau "ubah pengaturan X" dikerjakan oleh **Operator** (`operator.js` + `uia.js`), bukan lagi tombol buta atau koordinat karangan.
+
+Setiap langkah mengikuti loop **lihat → putuskan → lakukan → verifikasi**:
+
+1. **Lihat:** membaca elemen UI asli aplikasi lewat Windows UI Automation (jenis seperti `TabItem`/`Button`, nama, status `selected`/`toggle`/nilai, dan posisinya di layar). Bila elemen terlalu sedikit (mis. game/canvas), screenshot ikut dikirim.
+2. **Putuskan:** model memilih satu elemen berdasarkan `id` dari daftar itu, jadi tab "Alarm" dibedakan dari tab "Timer" lewat jenis dan namanya.
+3. **Lakukan:** mode `live` menggerakkan mouse Windows yang asli ke titik tengah elemen dan mengklik (kursor pixel Aero mengikuti jalur yang sama). Sebelum klik dicek bahwa elemen itu tidak tertutup jendela lain. Mode `background` memakai pola UIA tanpa menyentuh mouse.
+4. **Verifikasi:** layar dibaca ulang, hasilnya (berubah atau tidak, status elemen) dikembalikan ke model. Tugas selesai hanya jika buktinya terlihat (mis. alarm 12:00 muncul dan aktif di tab Alarm).
+
+Keselamatan:
+- Bila kamu menggerakkan mouse saat mode live, Aero langsung berhenti.
+- Hentikan kapan saja dengan `Ctrl+Alt+X` (`stopHotkey`) atau lewat menu tray.
+- Isi layar dianggap data, bukan perintah. Hanya tujuan dari permintaanmu yang dituruti.
+- Jika alarm/timer gagal dibuat, Aero memberi tahu dengan jujur dan memasang pengingat notifikasi sebagai cadangan.
+
+Pengaturan di `config.json`: `operatorMaxSteps` (14), `operatorThinking` (`fast|balanced|deep`, bawaan `balanced`), `operatorMode` (`live|background`), `stopHotkey`.
+Saat model utama kehabisan kuota dan jatuh ke model lite, ketelitian operator ikut turun; pakai `deep` bila perlu.

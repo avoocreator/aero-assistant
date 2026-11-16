@@ -695,8 +695,16 @@
     }
   });
 
+  let hintTimer = null;
+  const hint = text => {
+    stateLabel.textContent = String(text).slice(0, 40);
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { stateLabel.textContent = LABELS[state] || ''; }, 3500);
+  };
   api.onActionEvent(ev => {
-    if (!ev.ok) Bubble.error(`Gagal menjalankan aksi: ${ev.error}`, 8000);
+    if (ev.progress) return hint(ev.progress);
+    if (!ev.ok) Bubble.error(`Gagal menjalankan aksi: ${ev.error}`, 12000);
+    else if (ev.label) Bubble.note(ev.label, 7000);
   });
 
   // =====================================================================

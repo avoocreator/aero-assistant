@@ -117,8 +117,8 @@
     cursorX = startX;
     cursorY = startY;
 
-    // Fase 1: Kursor meluncur ke target (380 ms)
-    const flyDuration = 380;
+    // Fase 1: Kursor meluncur ke target (180 ms, gesit dan presisi)
+    const flyDuration = 180;
     const t0 = performance.now();
 
     await new Promise(res => {
@@ -152,14 +152,14 @@
     spawnRipple(targetX, targetY);
     spawnSparks(targetX, targetY, type === 'click' ? 10 : 6);
 
-    // Tahan sejenak di target agar terlihat jelas aksinya (~320ms)
-    await new Promise(r => setTimeout(r, 320));
+    // Tahan sejenak di target agar terlihat jelas aksinya (~120ms)
+    await new Promise(r => setTimeout(r, 120));
 
     // Jadwalkan fade-out jika tidak ada aksi berikutnya yang masuk
     fadeTimer = setTimeout(async () => {
       if (badge) badge.style.display = 'none';
 
-      const fadeDuration = 350;
+      const fadeDuration = 200;
       const tRet = performance.now();
       const originX = from?.x ?? (window.innerWidth - 80);
       const originY = from?.y ?? (window.innerHeight - 80);
@@ -182,7 +182,7 @@
 
       active = false;
       opacity = 0;
-    }, 450);
+    }, 300);
   }
 
   // Loop Render Canvas

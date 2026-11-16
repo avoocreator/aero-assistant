@@ -7,6 +7,8 @@ const path = require('path');
 const gemini = require('./gemini');
 const { AgentManager } = require('./agent');
 const actions = require('./actions');
+const { UiaBridge } = require('./uia');
+const { Operator } = require('./operator');
 const edgeTts = require('./edge-tts');
 
 // ---------- Muat Variabel Lingkungan ----------
@@ -47,6 +49,10 @@ let config = {
   maxHistoryTurns: 8,
   hotkey: 'F9',
   actionsEnabled: true,
+  operatorMaxSteps: 14,
+  operatorThinking: 'balanced',
+  operatorMode: 'live',
+  stopHotkey: 'Ctrl+Alt+X',
   apps: {},
   agentEnabled: true,
   agentCommand: 'agy',
@@ -133,43 +139,27 @@ function createCursorOverlay() {
   });
 }
 
-async function animateVirtualCursor(cursorInput) {
-  if (!cursorWin || cursorWin.isDestroyed()) {
-    createCursorOverlay();
-  }
+// Menggerakkan kursor overlay ke titik layar SUNGGUHAN (piksel fisik, dari UI Automation).
+// Di mode live, mouse Windows yang asli bergerak ke titik yang sama pada saat yang sama.
+function cursorTo({ x, y, label, type }) {
+  if (!cursorWin || cursorWin.isDestroyed()) createCursorOverlay();
+  if (!cursorWin || cursorWin.isDestroyed()) return Promise.resolve();
 
-  const display = screen.getPrimaryDisplay();
-  const screenW = display.bounds.width;
-  const screenH = display.bounds.height;
+  let dip = { x, y };
+  try { if (process.platform === 'win32') dip = screen.screenToDipPoint({ x, y }); } catch {}
+  const disp = screen.getDisplayNearestPoint(dip);
+  const b = disp.bounds;
+  const cur = cursorWin.getBounds();
+  if (cur.x !== b.x || cur.y !== b.y || cur.width !== b.width || cur.height !== b.height) cursorWin.setBounds(b);
 
-  const steps = Array.isArray(cursorInput) ? cursorInput : [cursorInput];
-  let prevPos = null;
-
-  for (const step of steps) {
-    const winBounds = win ? win.getBounds() : { x: screenW - 420, y: screenH - 720, width: 420, height: 720 };
-    const droneX = winBounds.x + winBounds.width / 2;
-    const droneY = winBounds.y + winBounds.height - 180;
-
-    const fromX = prevPos ? prevPos.x : droneX;
-    const fromY = prevPos ? prevPos.y : droneY;
-
-    const toX = step.x ?? (step.relX != null ? Math.round(screenW * step.relX) : Math.round(screenW * 0.5));
-    const toY = step.y ?? (step.relY != null ? Math.round(screenH * step.relY) : Math.round(screenH * 0.5));
-
-    prevPos = { x: toX, y: toY };
-
-    if (cursorWin && !cursorWin.isDestroyed()) {
-      cursorWin.webContents.send('cursor-action', {
-        from: { x: fromX, y: fromY },
-        to: { x: toX, y: toY },
-        label: step.label || 'Aksi',
-        type: step.action || 'click'
-      });
-    }
-
-    const waitMs = step.duration || 950;
-    await new Promise(r => setTimeout(r, waitMs));
-  }
+  const winB = win ? win.getBounds() : { x: b.x + b.width - 420, y: b.y + b.height - 720, width: 420, height: 720 };
+  cursorWin.webContents.send('cursor-action', {
+    from: { x: winB.x + winB.width / 2 - b.x, y: winB.y + winB.height - 180 - b.y },
+    to: { x: dip.x - b.x, y: dip.y - b.y },
+    label: label || 'Aksi',
+    type: type || 'click'
+  });
+  return new Promise(r => setTimeout(r, 320));
 }
 
 // ---------- Jendela Transparan Mengambang ----------
@@ -261,21 +251,134 @@ function setupAgents() {
 }
 
 // ---------- Aksi Komputer ----------
-async function doActions(list) {
-  const results = await actions.runActions(list, { apps: config.apps });
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r.ok) {
-      console.log(`[Aksi Berhasil] ${r.label}`);
-      if (r.cursorSteps) {
-        await animateVirtualCursor(r.cursorSteps);
-      } else if (r.cursor) {
-        await animateVirtualCursor(r.cursor);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let uia = null;
+let operator = null;
+let opCtrl = null;
+
+function getOperator() {
+  if (operator) return operator;
+  uia = new UiaBridge();
+  const models = () => [config.model, ...(config.fallbackModels || [])].filter(Boolean);
+  operator = new Operator({
+    uia,
+    maxSteps: config.operatorMaxSteps,
+    decide: ({ system, contents, signal }) => gemini.generateJSON({
+      apiKey: process.env.GEMINI_API_KEY, models: models(), system, contents,
+      level: config.operatorThinking, signal
+    }),
+    openApp: name => actions.openApp(name, config.apps),
+    screenshot: () => captureScreen(),
+    onCursor: cursorTo,
+    onStatus: text => send('action-event', { ok: true, progress: text })
+  });
+  return operator;
+}
+
+function cancelOperator() {
+  if (opCtrl) { opCtrl.abort(); return true; }
+  return false;
+}
+
+async function runTask(task) {
+  if (process.platform !== 'win32') {
+    send('action-event', { ok: false, type: task.kind, error: 'Kontrol aplikasi langsung hanya didukung di Windows.' });
+    return;
+  }
+  if (opCtrl) {
+    send('action-event', { ok: false, type: task.kind, error: 'Aku masih mengerjakan tugas sebelumnya. Tunggu selesai atau hentikan dulu.' });
+    return;
+  }
+  opCtrl = new AbortController();
+  const mode = task.mode || config.operatorMode || 'live';
+  console.log(`[Tugas] (${mode}) ${task.goal || task.title}`);
+  send('action-event', { ok: true, progress: `Mengerjakan: ${task.title}` });
+  try {
+    // Jalur Cepat Deterministik untuk Alarm (< 3 detik)
+    if (task.kind === 'alarm' && task.time) {
+      getOperator();
+      const res = await uia.call('clock_alarm', {
+        hour: task.time.h,
+        min: task.time.min,
+        label: task.time.label || ''
+      }, 15000);
+
+      if (res && res.ok) {
+        if (mode === 'live') {
+          for (const st of res.steps || []) {
+            if (opCtrl.signal.aborted) break;
+            await cursorTo({ x: st.x, y: st.y, label: st.name, type: 'click' });
+          }
+        }
+        console.log(`[Tugas Cepat Selesai] ${res.summary}`);
+        send('action-event', { ok: true, type: task.kind, label: res.summary });
+        return;
       }
-    } else {
-      console.warn(`[Aksi Gagal] ${list[i]?.type}: ${r.error}`);
-      send('action-event', { ok: false, type: list[i]?.type, error: r.error });
+      console.warn('[Jalur cepat alarm gagal, fallback ke Operator]', res?.error);
     }
+
+    // Jalur Cepat Deterministik untuk Timer (< 3 detik)
+    if (task.kind === 'timer' && task.timer) {
+      getOperator();
+      const res = await uia.call('clock_timer', {
+        hours: task.timer.hours || 0,
+        minutes: task.timer.minutes || 0,
+        seconds: task.timer.seconds || 0,
+        label: task.timer.label || ''
+      }, 15000);
+
+      if (res && res.ok) {
+        if (mode === 'live') {
+          for (const st of res.steps || []) {
+            if (opCtrl.signal.aborted) break;
+            await cursorTo({ x: st.x, y: st.y, label: st.name, type: 'click' });
+          }
+        }
+        console.log(`[Tugas Cepat Selesai] ${res.summary}`);
+        send('action-event', { ok: true, type: task.kind, label: res.summary });
+        return;
+      }
+      console.warn('[Jalur cepat timer gagal, fallback ke Operator]', res?.error);
+    }
+
+    // Fallback: Operator cerdas adaptif umum
+    const res = await getOperator().run({ goal: task.goal, mode, signal: opCtrl.signal });
+    if (res.ok) {
+      console.log(`[Tugas Selesai] ${res.summary} (${res.steps} langkah)`);
+      send('action-event', { ok: true, type: task.kind, label: res.summary });
+    } else {
+      console.warn(`[Tugas Gagal] ${res.summary}`);
+      let msg = res.summary;
+      if (task.reminder && !res.canceled && !res.interrupted) {
+        try {
+          if (await actions.scheduleReminder(task.reminder)) msg += ' Sebagai gantinya, kupasang pengingat notifikasi Aero pada waktunya (bukan alarm aplikasi Jam).';
+        } catch {}
+      }
+      send('action-event', { ok: false, type: task.kind, error: msg });
+    }
+  } catch (e) {
+    console.warn('[Tugas Error]', e.message);
+    send('action-event', { ok: false, type: task.kind, error: `Operator error: ${e.message}` });
+  } finally {
+    opCtrl = null;
+  }
+}
+
+async function doActions(list) {
+  for (const a of (list || []).slice(0, 5)) {
+    let task = null;
+    try { task = actions.toTask(a); }
+    catch (e) { send('action-event', { ok: false, type: a?.type, error: e.message }); continue; }
+
+    if (task) { await runTask(task); continue; }
+
+    const r = await actions.runAction(a, { apps: config.apps });
+    if (r.ok) console.log(`[Aksi Berhasil] ${r.label}`);
+    else {
+      console.warn(`[Aksi Gagal] ${a?.type}: ${r.error}`);
+      send('action-event', { ok: false, type: a?.type, error: r.error });
+    }
+    await sleep(500);
   }
 }
 
@@ -346,7 +449,7 @@ ipcMain.handle('ask-stream', async (e, { id, text, audioB64, audioMime }) => {
 
 ipcMain.on('cancel-ask', (_e, id) => asks.get(id)?.abort());
 ipcMain.on('agent-cancel', (_e, id) => agents?.cancel(id));
-ipcMain.on('trigger-cursor-action', (_e, data) => animateVirtualCursor(data));
+ipcMain.on('cancel-operator', () => cancelOperator());
 
 ipcMain.handle('tts-edge', async (_e, text) => {
   try {
@@ -434,6 +537,10 @@ function buildTrayMenu() {
       click: m => setAutostart(m.checked)
     },
     {
+      label: `Hentikan Aksi Komputer (${config.stopHotkey})`,
+      click: () => cancelOperator()
+    },
+    {
       label: 'Batalkan Semua Tugas Latar Belakang',
       enabled: Boolean(agents),
       click: () => agents?.cancelAll()
@@ -483,10 +590,15 @@ app.whenReady().then(async () => {
     send('hotkey');
   });
   if (!ok) console.warn(`Hotkey ${config.hotkey} gagal didaftarkan.`);
+  if (config.stopHotkey && !globalShortcut.register(config.stopHotkey, () => {
+    if (cancelOperator()) send('action-event', { ok: true, label: 'Aksi komputer dihentikan.' });
+  })) console.warn(`Hotkey stop ${config.stopHotkey} gagal didaftarkan.`);
 });
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   agents?.cancelAll();
+  cancelOperator();
+  uia?.stop();
 });
 app.on('window-all-closed', () => app.quit());

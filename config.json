@@ -32,5 +32,9 @@
     "--dangerously-skip-permissions"
   ],
   "agentTimeoutSec": 240,
-  "agentMaxTasks": 3
+  "agentMaxTasks": 3,
+  "operatorMaxSteps": 14,
+  "operatorThinking": "fast",
+  "operatorMode": "live",
+  "stopHotkey": "Ctrl+Alt+X"
 }

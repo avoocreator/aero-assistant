@@ -40,11 +40,12 @@ function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
     lines.push(
       '',
       'AKSI KOMPUTER & KONTROL APLIKASI (isi baris @action, satu objek JSON per baris, maksimal 4):',
-      '- {"type":"set_alarm","time":"12:00","label":"Makan Siang"}  mengatur alarm sistem pada jam tertentu',
-      '- {"type":"set_timer","minutes":10,"label":"Rehat"}  memasang timer countdown',
-      '- {"type":"click_ui","app":"spotify|aplikasi","button":"play|pause|next|save|add"}  mengklik tombol/kontrol di aplikasi',
-      '- {"type":"read_window","app":"<nama aplikasi>"}  membaca informasi/status jendela aplikasi di latar belakang',
-      '- {"type":"type_text","text":"isi teks yang ingin diketik"}  mengetikkan teks ke aplikasi aktif',
+      '- {"type":"do_task","goal":"<tujuan lengkap, 1-2 kalimat>","mode":"live|background"}  tugas yang butuh KLIK/ISI di dalam aplikasi (Operator akan membaca UI aplikasi, memilih tombol/tab yang tepat, mengklik dengan mouse sungguhan, dan memverifikasi hasilnya)',
+      '- {"type":"set_alarm","time":"12:00","label":"Makan Siang"}  alarm di aplikasi Jam (Operator memastikan tab Alarm)',
+      '- {"type":"set_timer","minutes":10,"seconds":0,"label":"Rehat"}  timer di aplikasi Jam (Operator memastikan tab Timer)',
+      '- {"type":"click_ui","app":"<aplikasi>","button":"<label tombol>"}  menekan satu tombol bernama tertentu di aplikasi; play/pause/next/prev memakai tombol media',
+      '- {"type":"type_text","text":"isi teks","app":"<aplikasi>"}  mengetik teks ke kolom yang tepat',
+      '- {"type":"read_window","app":"<nama aplikasi>"}  membaca judul jendela aplikasi di latar belakang',
       '- {"type":"open_app","app":"<nama aplikasi>"}  membuka aplikasi',
       '- {"type":"close_app","app":"<nama aplikasi>"}  menutup aplikasi secara halus',
       '- {"type":"open_url","url":"https://...","browser":"firefox|chrome|edge|brave"}  membuka alamat web',
@@ -53,12 +54,12 @@ function buildSystemPrompt(name, agentEnabled, actionsEnabled) {
       '- {"type":"spotify_search","query":"judul lagu"}  membuka pencarian lagu di Spotify',
       '- {"type":"media","key":"play_pause|next|previous|volume_up|volume_down|mute"}  kontrol media/volume sistem',
       'Aturan aksi:',
-      '- Saat pengguna meminta mengatur alarm/jam (misal "aturkan alarm di jam 12.00"), SELALU gunakan aksi "set_alarm" dengan field "time":"12:00". Jangan hanya membuka aplikasi jam.',
-      '- Saat pengguna meminta memasang timer (misal "pasang timer 5 menit"), gunakan aksi "set_timer" dengan "minutes":5.',
-      '- Saat pengguna meminta mengontrol lagu/tombol di aplikasi, gunakan "click_ui" atau "media".',
-      '- Kursor virtual Aero akan otomatis terbang dan mengklik tombol/kontrol tersebut di layar pengguna.',
+      '- Alarm: gunakan "set_alarm" dengan "time":"HH:MM" (24 jam). Timer: gunakan "set_timer". Jangan hanya membuka aplikasi jam.',
+      '- Untuk pekerjaan lain yang perlu klik/isi di aplikasi (mis. "ubah pengaturan X", "tambah item di Y", "putar playlist Z di Spotify"), gunakan "do_task" dengan tujuan yang jelas dan lengkap. Operator yang menentukan tombol/tab mana yang diklik, kamu TIDAK perlu menyebut koordinat atau urutan klik.',
+      '- mode "live" (bawaan): mouse dan keyboard asli bergerak di layar pengguna. Pakai "background" hanya bila pengguna minta dikerjakan di latar belakang / tanpa mengganggu.',
+      '- Tugas ini butuh beberapa detik sampai puluhan detik dan hasilnya (berhasil atau gagal) dilaporkan sendiri ke pengguna setelah selesai. Jangan mengaku sudah berhasil; katakan bahwa kamu sedang mengerjakannya.',
       '- Hanya jalankan aksi bila PENGGUNA memintanya dengan jelas.',
-      '- Jawaban lisanmu cukup konfirmasi singkat, misal: "Siap, alarm jam 12.00 sudah kuaturkan."'
+      '- Jawaban lisanmu cukup konfirmasi singkat, misal: "Siap, kuaturkan alarm jam 12 ya, kamu bisa lihat aku mengerjakannya."'
     );
   }
 
@@ -293,4 +294,51 @@ async function askStream({ apiKey, models, name, history, input, agentEnabled, a
   return { ok: false, error: friendlyError(lastErr) };
 }
 
-module.exports = { askStream, buildSystemPrompt, createParser, friendlyError, LEVELS };
+
+// Panggilan non-streaming yang mengembalikan JSON (dipakai operator komputer untuk memutuskan langkah berikutnya).
+async function generateJSON({ apiKey, models, system, contents, level = 'balanced', signal, timeoutMs = 45000 }) {
+  const lv = LEVELS[level] || LEVELS.balanced;
+  let lastErr;
+  for (const model of models) {
+    const key = `${model}:${level}`;
+    let idx = thinkChoice.get(key) ?? 0;
+    for (;;) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const onAbort = () => ctrl.abort();
+      signal?.addEventListener('abort', onAbort);
+      try {
+        const gen = { temperature: lv.temp, responseMimeType: 'application/json' };
+        if (lv.variants[idx]) gen.thinkingConfig = lv.variants[idx];
+        const res = await fetch(`${BASE}/${encodeURIComponent(model)}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: gen }),
+          signal: ctrl.signal
+        });
+        const raw = await res.text();
+        let j; try { j = JSON.parse(raw); } catch {}
+        if (!res.ok) throw Object.assign(new Error(j?.error?.message || raw.slice(0, 300)), { status: res.status });
+        const text = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+        if (!text) throw new Error('Model tidak memberi jawaban.');
+        const body = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+        let out;
+        try { out = JSON.parse(body); }
+        catch { const m = body.match(/\{[\s\S]*\}/); if (!m) throw new Error('Jawaban model bukan JSON.'); out = JSON.parse(m[0]); }
+        thinkChoice.set(key, idx);
+        return { ok: true, json: out, model };
+      } catch (e) {
+        if (signal?.aborted) return { ok: false, canceled: true };
+        lastErr = e;
+        if (e.status === 400 && idx < lv.variants.length - 1) { idx++; continue; }
+        break;
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+      }
+    }
+  }
+  return { ok: false, error: friendlyError(lastErr) };
+}
+
+module.exports = { generateJSON, askStream, buildSystemPrompt, createParser, friendlyError, LEVELS };
