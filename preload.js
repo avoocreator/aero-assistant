@@ -33,7 +33,14 @@ const api = {
 
   onHotkey: cb => ipcRenderer.on('hotkey', () => cb()),
   onVisionChanged: cb => ipcRenderer.on('vision-changed', (_e, on) => cb(on)),
-  onClearHistory: cb => ipcRenderer.on('history-cleared', () => cb())
+  onClearHistory: cb => ipcRenderer.on('history-cleared', () => cb()),
+
+  getSettings: () => ipcRenderer.invoke('settings-get'),
+  setSettings: patch => ipcRenderer.invoke('settings-set', patch),
+  onSettings: cb => ipcRenderer.on('settings-changed', (_e, s) => cb(s)),
+  onInitiative: cb => ipcRenderer.on('initiative', (_e, p) => cb(p)),
+  initiativeFeedback: (id, outcome) => ipcRenderer.send('initiative-feedback', { id, outcome }),
+  initiativeEvent: (kind, facts) => ipcRenderer.send('initiative-event', { kind, facts })
 };
 
 // Ekspos ke window.assistant dan window.nova agar kompatibel penuh

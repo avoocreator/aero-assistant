@@ -35,10 +35,18 @@
       <button id="btnMic" title="Bicara (F9)" aria-label="Bicara"></button>
       <button id="btnType" title="Ketik pesan teks" aria-label="Ketik"></button>
       <button id="btnThink" title="Mode berpikir: Cepat (~1s)" aria-label="Mode Berpikir" data-mode="fast"></button>
+      <button id="btnVol" title="Volume suara Aero" aria-label="Volume" aria-expanded="false"></button>
       <button id="btnEye" title="Boleh lihat layar (Vision)" aria-label="Lihat Layar" aria-pressed="true"></button>
       <button id="btnReset" title="Lupakan riwayat percakapan" aria-label="Reset Sesi"></button>
       <button id="btnHide" title="Sembunyikan ke sistem tray" aria-label="Sembunyikan"></button>
       <button id="btnQuit" title="Tutup aplikasi" aria-label="Keluar"></button>
+    </div>
+
+    <!-- Panel Volume (muncul saat tombol speaker diklik) -->
+    <div id="volPanel" class="interactive hidden" role="group" aria-label="Volume suara Aero">
+      <button id="btnMute" type="button" aria-label="Senyapkan" aria-pressed="false"></button>
+      <input id="volRange" type="range" min="0" max="100" step="5" value="85" aria-label="Volume">
+      <span id="volText">85%</span>
     </div>
 
     <!-- Form Input Teks (Tersembunyi sampai tombol keyboard diklik) -->

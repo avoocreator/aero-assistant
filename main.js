@@ -1,6 +1,6 @@
 const {
   app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain,
-  desktopCapturer, screen, nativeImage, session
+  desktopCapturer, screen, nativeImage, session, powerMonitor
 } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +11,9 @@ const { UiaBridge } = require('./uia');
 const { Operator } = require('./operator');
 const { createRoamer, anchorOf } = require('./roam');
 const edgeTts = require('./edge-tts');
+const { createSettings } = require('./settings');
+const { createInitiative } = require('./initiative');
+const quns = require('./quns');
 
 // ---------- Muat Variabel Lingkungan ----------
 function loadEnv() {
@@ -60,7 +63,9 @@ let config = {
   agentCommand: 'agy',
   agentArgs: ['--dangerously-skip-permissions'],
   agentTimeoutSec: 240,
-  agentMaxTasks: 3
+  agentMaxTasks: 3,
+  initiativeModel: 'gemini-flash-lite-latest',
+  initiative: { quiet: { start: '23:00', end: '07:00' }, modelChance: 0.6, breakAfterMin: 90 }
 };
 
 try {
@@ -90,6 +95,8 @@ let homeAnchor = null;
 let tray = null;
 let history = [];
 let agents = null;
+let settings = null;
+let initiative = null;
 const asks = new Map();
 
 const send = (channel, payload) => {
@@ -211,6 +218,18 @@ function createWindow() {
     send: ev => send('fly', ev)
   });
   roamer.start();
+  if (initiative) initiative.stop();
+  initiative = createInitiative({
+    config: () => config,
+    settings,
+    getIdleSec: () => { try { return powerMonitor.getSystemIdleTime(); } catch { return 0; } },
+    isBusy: () => uiBusy || Boolean(opCtrl),
+    isInterruptible: () => quns.interruptible(),
+    deliver: payload => { if (!win || win.isDestroyed() || !win.isVisible()) return false; send('initiative', payload); return true; },
+    addHistory,
+    generate: generateInitiative
+  });
+  initiative.start();
 
   win.on('closed', () => {
     roamer?.stop();
@@ -299,6 +318,12 @@ function cancelOperator() {
   return false;
 }
 
+// Hasil tugas: Aero yang membuka obrolan (lewat inisiatif); bila inisiatif mati, pakai bubble biasa.
+function reportTask(ok, text, fallback) {
+  const taken = initiative?.event('task', { ok, text, emotion: ok ? 'happy' : 'sad' });
+  if (!taken) send('action-event', fallback);
+}
+
 async function runTask(task) {
   if (process.platform !== 'win32') {
     send('action-event', { ok: false, type: task.kind, error: 'Kontrol aplikasi langsung hanya didukung di Windows.' });
@@ -330,7 +355,7 @@ async function runTask(task) {
           }
         }
         console.log(`[Tugas Cepat Selesai] ${res.summary}`);
-        send('action-event', { ok: true, type: task.kind, label: res.summary });
+        reportTask(true, res.summary, { ok: true, type: task.kind, label: res.summary });
       roamer?.nudge('tugas', 0.5);
         return;
       }
@@ -355,7 +380,7 @@ async function runTask(task) {
           }
         }
         console.log(`[Tugas Cepat Selesai] ${res.summary}`);
-        send('action-event', { ok: true, type: task.kind, label: res.summary });
+        reportTask(true, res.summary, { ok: true, type: task.kind, label: res.summary });
         return;
       }
       console.warn('[Jalur cepat timer gagal, fallback ke Operator]', res?.error);
@@ -365,7 +390,7 @@ async function runTask(task) {
     const res = await getOperator().run({ goal: task.goal, mode, signal: opCtrl.signal });
     if (res.ok) {
       console.log(`[Tugas Selesai] ${res.summary} (${res.steps} langkah)`);
-      send('action-event', { ok: true, type: task.kind, label: res.summary });
+      reportTask(true, res.summary, { ok: true, type: task.kind, label: res.summary });
     } else {
       console.warn(`[Tugas Gagal] ${res.summary}`);
       let msg = res.summary;
@@ -374,7 +399,7 @@ async function runTask(task) {
           if (await actions.scheduleReminder(task.reminder)) msg += ' Sebagai gantinya, kupasang pengingat notifikasi Aero pada waktunya (bukan alarm aplikasi Jam).';
         } catch {}
       }
-      send('action-event', { ok: false, type: task.kind, error: msg });
+      reportTask(false, msg, { ok: false, type: task.kind, error: msg });
     }
   } catch (e) {
     console.warn('[Tugas Error]', e.message);
@@ -403,6 +428,27 @@ async function doActions(list) {
         send('action-event', { ok: false, type: 'move', error: `Tidak bisa pindah ke area ${area}` });
       }
       await sleep(300);
+      continue;
+    }
+
+    if (a?.type === 'set_volume') {
+      const cur = settings.get().volume;
+      const v = Number.isFinite(Number(a.percent)) ? Number(a.percent) : cur + (Number(a.delta) || 0);
+      const n = settings.set({ volume: v, muted: v <= 0 ? true : false });
+      send('settings-changed', n);
+      buildTrayMenu();
+      continue;
+    }
+    if (a?.type === 'snooze') {
+      initiative?.snooze(Math.max(0, Number(a.minutes) || 60));
+      send('settings-changed', settings.get());
+      buildTrayMenu();
+      continue;
+    }
+    if (a?.type === 'initiative') {
+      settings.set({ initiative: { level: a.level } });
+      send('settings-changed', settings.get());
+      buildTrayMenu();
       continue;
     }
 
@@ -481,6 +527,21 @@ ipcMain.handle('ask-stream', async (e, { id, text, audioB64, audioMime }) => {
   }
 });
 
+ipcMain.handle('settings-get', () => settings.get());
+ipcMain.handle('settings-set', (_e, patch) => {
+  // renderer hanya boleh mengubah volume/mute dan pilihan inisiatif, bukan status internal
+  const p = {};
+  if (patch && typeof patch === 'object') {
+    if ('volume' in patch) p.volume = patch.volume;
+    if ('muted' in patch) p.muted = patch.muted;
+  }
+  const n = settings.set(p);
+  buildTrayMenu();
+  return n;
+});
+ipcMain.on('initiative-feedback', (_e, { id, outcome } = {}) => initiative?.feedback(id, outcome));
+ipcMain.on('initiative-event', (_e, { kind, facts } = {}) => { if (kind === 'battery') initiative?.event('battery', facts || {}); });
+
 ipcMain.on('cancel-ask', (_e, id) => asks.get(id)?.abort());
 ipcMain.on('agent-cancel', (_e, id) => agents?.cancel(id));
 ipcMain.on('cancel-operator', () => cancelOperator());
@@ -547,6 +608,46 @@ ipcMain.on('set-ignore-mouse', (_e, ignore) => {
 ipcMain.on('hide-window', () => win?.hide());
 ipcMain.on('quit-app', () => app.quit());
 
+// ---------- Pengaturan: volume & inisiatif ----------
+function broadcastSettings() {
+  send('settings-changed', settings.get());
+  buildTrayMenu();
+}
+function setVolume(p) { settings.set(p); broadcastSettings(); }
+function setInit(p) { settings.set({ initiative: p }); broadcastSettings(); }
+
+// Kalimat segar untuk inisiatif (model lite, jatah terpisah). Gagal/kuota habis -> null, mesin pakai kumpulan kalimat.
+const INIT_HINT = {
+  return: 'Pengguna baru kembali setelah pergi {away}. Sapa singkat, hangat.',
+  morning: 'Ini sapaan pagi pertama hari ini.',
+  meal: 'Sudah waktu makan siang. Ingatkan dengan santai.',
+  night: 'Sudah larut malam. Ingatkan istirahat dengan lembut.',
+  break: 'Pengguna sudah aktif {work} tanpa jeda. Ajak rehat sebentar.',
+  battery: 'Baterai laptop tinggal {pct}% dan tidak dicas. Ingatkan colok charger.'
+};
+async function generateInitiative(kind, facts) {
+  const key = process.env.GEMINI_API_KEY;
+  const hint = INIT_HINT[kind];
+  if (!key || !hint) return null;
+  const fill = s => s.replace(/\{(\w+)\}/g, (_m, k) => facts?.[k] ?? '');
+  const system = `Kamu ${config.assistantName}, asisten desktop mungil berbentuk bola emas pixel. Kamu sedang membuka obrolan duluan. ` +
+    'Tulis SATU kalimat pendek (maksimal 140 karakter) berbahasa Indonesia santai, hangat, tidak menggurui, tanpa emoji, tanpa tanda kutip. ' +
+    'Balas JSON: {"emotion":"happy|curious|excited|sleepy|playful|love|sad","text":"..."}.';
+  try {
+    const r = await gemini.generateJSON({
+      apiKey: key,
+      models: [config.initiativeModel || 'gemini-flash-lite-latest'],
+      system,
+      contents: [{ role: 'user', parts: [{ text: fill(hint) }] }],
+      level: 'fast', timeoutMs: 8000
+    });
+    const text = String(r?.json?.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    return text ? { text, emotion: String(r.json.emotion || 'happy') } : null;
+  } catch (e) {
+    return { quota: /429|quota|kuota|jatah|exhaust/i.test(`${e.status || ''} ${e.message}`) };
+  }
+}
+
 // ---------- Tray & Menu ----------
 function buildTrayMenu() {
   if (!tray) return;
@@ -579,6 +680,38 @@ function buildTrayMenu() {
       type: 'checkbox',
       checked: autostartOn(),
       click: m => setAutostart(m.checked)
+    },
+    {
+      label: 'Volume Suara',
+      submenu: [
+        { label: 'Senyap', type: 'checkbox', checked: settings.get().muted, click: m => setVolume({ muted: m.checked }) },
+        { type: 'separator' },
+        ...[25, 50, 75, 100].map(v => ({
+          label: `${v}%`, type: 'radio',
+          checked: !settings.get().muted && settings.get().volume === v,
+          click: () => setVolume({ volume: v, muted: false })
+        }))
+      ]
+    },
+    {
+      label: 'Inisiatif Aero (mulai ngobrol)',
+      submenu: [
+        ...[['off', 'Mati'], ['rare', 'Jarang'], ['normal', 'Normal'], ['chatty', 'Cerewet']].map(([k, n]) => ({
+          label: n, type: 'radio', checked: settings.get().initiative.level === k, click: () => setInit({ level: k })
+        })),
+        { type: 'separator' },
+        ...[['important', 'Suara untuk yang penting saja'], ['always', 'Selalu bersuara'], ['never', 'Bubble saja']].map(([k, n]) => ({
+          label: n, type: 'radio', checked: settings.get().initiative.voice === k, click: () => setInit({ voice: k })
+        })),
+        { type: 'separator' },
+        ...[['return', 'Sapa saat kembali'], ['morning', 'Sapaan pagi'], ['meal', 'Ingatkan makan'], ['night', 'Ingatkan tidur'], ['break', 'Ingatkan istirahat'], ['battery', 'Peringatan baterai']].map(([k, n]) => ({
+          label: n, type: 'checkbox', checked: settings.get().initiative.kinds[k] !== false, click: m => setInit({ kinds: { [k]: m.checked } })
+        })),
+        { type: 'separator' },
+        settings.get().initiative.snoozeUntil > Date.now()
+          ? { label: 'Lanjutkan (batalkan diam)', click: () => { initiative?.snooze(0); broadcastSettings(); } }
+          : { label: 'Diam dulu 1 jam', click: () => { initiative?.snooze(60); broadcastSettings(); } }
+      ]
     },
     {
       label: 'Terbang Sendiri (berpindah tempat)',
@@ -631,6 +764,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media'));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
 
+  settings = createSettings(path.join(app.getPath('userData'), 'settings.json'));
   setupAgents();
   createWindow();
   createTray();
@@ -647,6 +781,8 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  initiative?.stop();
+  settings?.flush();
   agents?.cancelAll();
   cancelOperator();
   uia?.stop();

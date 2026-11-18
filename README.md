@@ -120,6 +120,18 @@ Aero memiliki kemampuan navigasi fisik melintasi layar monitor menggunakan linta
 - **Proteksi Batas Layar:** Algoritma navigasi menjamin posisi mendarat selalu menyisakan ruang aman untuk balon percakapan di atasnya, berada di dalam batas tampilan aktif (*work area*), dan tidak mendarat menimpa kursor mouse pengguna.
 - **Interupsi Interaktif:** Menekan mouse saat Aero sedang terbang akan langsung membatalkan lintasan dan "menangkapnya" seketika.
 
+
+### 4. Aero Memulai Obrolan Sendiri (`initiative.js`)
+Aero bisa membuka percakapan lebih dulu lewat bubble (dan suara untuk hal penting), tanpa menghabiskan kuota model:
+- **Pemicu:** kembali setelah pergi lama, sapaan pagi, jam makan siang, larut malam, terlalu lama bekerja tanpa jeda, baterai ≤20% / ≤10% (tidak dicas), dan hasil tugas komputer/riset.
+- **Sopan:** tidak muncul saat kamu sedang bicara/mengetik, layar penuh atau presentasi (Windows), jam tenang 23:00–07:00, atau saat kamu pergi. Ada jeda minimum dan batas harian per tingkat (Jarang / Normal / Cerewet).
+- **Belajar dari reaksi:** bila sebuah jenis pesan ditutup/diabaikan 3 kali beruntun, jenis itu dimatikan 24 jam.
+- **Kalimat:** kumpulan kalimat bawaan (gratis) dan, dengan jatah harian kecil, kalimat segar dari model lite (`initiativeModel`). Kuota habis otomatis kembali ke kalimat bawaan.
+- **Kontrol:** menu tray **Inisiatif Aero** (tingkat, suara, jenis pesan, "Diam dulu 1 jam"). Bisa juga lewat perintah suara, misalnya "jangan cerewet dulu".
+
+### 5. Volume Suara Aero
+Tombol speaker di toolbar membuka slider pixel (plus tombol senyap). Roda mouse di atas avatar mengubah volume ±5, dan tray punya submenu **Volume Suara**. Volume berlaku untuk suara Edge TTS, suara sistem, dan bunyi "bleep"; gerak mulut tetap normal saat volume kecil. Pengaturan tersimpan di `settings.json` (folder data aplikasi) dan bertahan setelah restart.
+
 ---
 
 ## Mesin Operator & Otomasi UI
@@ -206,6 +218,9 @@ Seluruh parameter aplikasi dapat diatur melalui berkas [config.json](file:///C:/
 | `stopHotkey` | `Ctrl+Alt+X` | Pintasan keyboard darurat untuk membatalkan seluruh operasi otomasi. |
 | `roam.enabled` | `true` | Mengaktifkan atau menonaktifkan fitur terbang berpindah tempat otonom. |
 | `roam.minSec` / `maxSec` | `50` / `160` | Rentang waktu jeda acak antar penerbangan dalam detik. |
+| `initiativeModel` | `gemini-flash-lite-latest` | Model ringan untuk kalimat inisiatif (jatah harian terbatas). |
+| `initiative.quiet` | `23:00`–`07:00` | Jam tenang: Aero tidak memulai obrolan. |
+| `initiative.breakAfterMin` | `90` | Menit bekerja nonstop sebelum Aero mengajak istirahat. |
 
 ---
 

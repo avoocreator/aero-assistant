@@ -7,6 +7,11 @@
   const typeInput = $('#typeInput');
   const btnEye = $('#btnEye');
   const btnThink = $('#btnThink');
+  const btnVol = $('#btnVol');
+  const btnMute = $('#btnMute');
+  const volPanel = $('#volPanel');
+  const volRange = $('#volRange');
+  const volText = $('#volText');
   const btnMic = $('#btnMic');
   const btnType = $('#btnType');
   const btnReset = $('#btnReset');
@@ -156,9 +161,58 @@
   // =====================================================================
   //  SUARA KELUAR (Streaming Edge Neural TTS + Sinkronisasi Visor Equalizer)
   // =====================================================================
+  // Volume utama: satu AudioContext + satu GainNode master. Penganalisis untuk gerak mulut ada SEBELUM master,
+  // jadi gerak mulut tidak ikut mengecil saat volume kecil. Kurva kuadrat supaya geser kecil terasa wajar di telinga.
+  const Vol = (() => {
+    let ctx = null, master = null;
+    let st = { volume: 85, muted: false };
+    const gain = () => (st.muted ? 0 : Math.pow(Math.min(100, Math.max(0, st.volume)) / 100, 2));
+    const apply = () => { if (master) master.gain.setTargetAtTime(gain(), ctx.currentTime, 0.015); };
+    const ensure = () => {
+      if (!ctx) {
+        ctx = new AudioContext();
+        master = ctx.createGain();
+        master.gain.value = gain();
+        master.connect(ctx.destination);
+      }
+      return ctx;
+    };
+    return {
+      ctx: ensure,
+      out: () => { ensure(); return master; },
+      set(p) { st = { ...st, ...p }; apply(); },
+      get: () => ({ ...st }),
+      gain,
+      audible: () => gain() > 0.0005,
+      level: () => (st.muted || st.volume <= 0 ? 0 : st.volume < 50 ? 1 : 2)
+    };
+  })();
+  window.AeroVolume = Vol;
+
+  // Bunyi kecil "bleep" pixel (gelombang kotak) sebagai tanda Aero mau bicara. Mengikuti volume.
+  const Sound = {
+    ping(kind = 'up') {
+      if (!Vol.audible()) return;
+      try {
+        const ctx = Vol.ctx();
+        ctx.resume?.();
+        const seq = { up: [[660, 0], [880, .09]], down: [[494, 0], [370, .09]], tick: [[880, 0]] }[kind] || [[660, 0]];
+        const t0 = ctx.currentTime + 0.01;
+        for (const [f, dt] of seq) {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'square'; o.frequency.value = f;
+          g.gain.setValueAtTime(0.0001, t0 + dt);
+          g.gain.linearRampToValueAtTime(0.07, t0 + dt + 0.008);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.085);
+          o.connect(g); g.connect(Vol.out());
+          o.start(t0 + dt); o.stop(t0 + dt + 0.1);
+        }
+      } catch {}
+    }
+  };
+
   const Speaker = (() => {
     let epoch = 0;
-    let ctx = null;
     let curSource = null;
     let raf = 0;
     let sysSpeaking = 0;
@@ -197,6 +251,7 @@
       if (v) u.voice = v;
       u.rate = 1.05;
       u.pitch = 1.08;
+      u.volume = Vol.gain();
       const done = new Promise(res => {
         u.onstart = () => { if (sysSpeaking++ === 0) mouthStart(); };
         u.onend = u.onerror = () => { if (--sysSpeaking <= 0) { sysSpeaking = 0; mouthStop(); } res(); };
@@ -214,7 +269,7 @@
     };
 
     async function fetchEdgeAudio(text) {
-      ctx ??= new AudioContext();
+      const ctx = Vol.ctx();
       const r = await api.ttsEdge(text);
       if (!r.ok) throw new Error(r.error);
       const bytes = b64ToBytes(r.audioB64);
@@ -222,6 +277,7 @@
     }
 
     async function playBuffer(buf) {
+      const ctx = Vol.ctx();
       await ctx.resume();
       const src = ctx.createBufferSource();
       src.buffer = buf;
@@ -229,7 +285,7 @@
       an.fftSize = 256;
       const td = new Uint8Array(an.fftSize);
       src.connect(an);
-      an.connect(ctx.destination);
+      an.connect(Vol.out());
       curSource = src;
 
       return new Promise(res => {
@@ -720,7 +776,7 @@
   let lastBusy = null;
   const computeBusy = () =>
     state !== 'idle' || !aeroBub.classList.contains('hidden') || !userBub.classList.contains('hidden') ||
-    !typeForm.classList.contains('hidden') || hoverUi || tasksEl.childElementCount > 0;
+    !typeForm.classList.contains('hidden') || !volPanel.classList.contains('hidden') || hoverUi || tasksEl.childElementCount > 0;
   setInterval(() => {
     const b = computeBusy();
     if (b !== lastBusy) { lastBusy = b; api.reportBusy?.(b); }
@@ -802,6 +858,57 @@
   });
   api.onVisionChanged(renderVision);
 
+  // ---------- Volume ----------
+  let volSaveTimer = 0;
+  const saveVol = () => {
+    clearTimeout(volSaveTimer);
+    volSaveTimer = setTimeout(() => { const v = Vol.get(); api.setSettings?.({ volume: v.volume, muted: v.muted }); }, 250);
+  };
+  function renderVol() {
+    const v = Vol.get(), lv = Vol.level();
+    btnVol.dataset.level = lv; btnMute.dataset.level = lv;
+    btnVol.title = v.muted ? 'Aero disenyapkan (klik untuk atur volume)' : `Volume Aero ${v.volume}% (klik untuk atur)`;
+    btnMute.setAttribute('aria-pressed', String(v.muted));
+    btnMute.title = v.muted ? 'Bunyikan lagi' : 'Senyapkan';
+    volRange.value = String(v.volume);
+    volRange.style.setProperty('--p', (v.muted ? 0 : v.volume) + '%');
+    volText.textContent = v.muted ? 'Mute' : v.volume + '%';
+    volPanel.classList.toggle('muted', v.muted);
+  }
+  let volCloseTimer = 0;
+  const armVolClose = () => { clearTimeout(volCloseTimer); volCloseTimer = setTimeout(() => closeVol(), 5000); };
+  function openVol() { volPanel.classList.remove('hidden'); btnVol.setAttribute('aria-expanded', 'true'); armVolClose(); }
+  function closeVol() { volPanel.classList.add('hidden'); btnVol.setAttribute('aria-expanded', 'false'); clearTimeout(volCloseTimer); }
+  const setVol = (p, { save = true, quiet = false } = {}) => {
+    Vol.set(p); renderVol(); if (save) saveVol();
+    if (!quiet && state === 'idle' && volPanel.classList.contains('hidden')) hint(Vol.get().muted ? 'Senyap' : `Volume ${Vol.get().volume}%`);
+    if (!volPanel.classList.contains('hidden')) armVolClose();
+  };
+  btnVol.addEventListener('click', () => (volPanel.classList.contains('hidden') ? openVol() : closeVol()));
+  volRange.addEventListener('input', () => {
+    const n = Number(volRange.value);
+    setVol({ volume: n, muted: n === 0 }, { quiet: true });
+  });
+  // bunyi contoh saat slider dilepas supaya terdengar seberapa keras
+  volRange.addEventListener('change', () => Sound.ping('tick'));
+  btnMute.addEventListener('click', () => {
+    const v = Vol.get();
+    setVol({ muted: !v.muted, volume: v.muted && v.volume === 0 ? 50 : v.volume }, { quiet: true });
+    if (Vol.audible()) Sound.ping('tick');
+  });
+  // roda mouse di atas avatar: volume +/- 5
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    const v = Vol.get();
+    const cur = v.muted ? 0 : v.volume;
+    const n = Math.min(100, Math.max(0, cur + (e.deltaY < 0 ? 5 : -5)));
+    setVol({ volume: n, muted: n === 0 });
+  }, { passive: false });
+  volPanel.addEventListener('mousemove', armVolClose);
+  { const s0 = (await api.getSettings?.()) || {}; Vol.set({ volume: s0.volume ?? 85, muted: Boolean(s0.muted) }); }
+  renderVol();
+  api.onSettings?.(s => { Vol.set({ volume: s.volume, muted: s.muted }); renderVol(); });
+
   btnReset.addEventListener('click', async () => {
     await api.clearHistory();
     Bubble.note('Riwayat percakapan telah dibersihkan.', 3000);
@@ -839,6 +946,59 @@
     window.Avatar?.setLook?.(0, 0);
   });
   setIgnore(true);
+
+  // =====================================================================
+  //  INISIATIF: Aero membuka obrolan duluan
+  // =====================================================================
+  let initCur = null, initTimer = 0;
+  const initDone = outcome => {
+    if (!initCur) return;
+    clearTimeout(initTimer);
+    api.initiativeFeedback?.(initCur.id, outcome);
+    initCur = null;
+  };
+  api.onInitiative?.(async p => {
+    const free = state === 'idle' && typeForm.classList.contains('hidden') && volPanel.classList.contains('hidden') &&
+      aeroBub.classList.contains('hidden') && !initCur;
+    if (!free) { api.initiativeFeedback?.(p.id, 'busy'); return; }
+    initCur = p;
+    window.Avatar?.setMood(p.emotion || 'happy');
+    Sound.ping(p.chime || 'up');
+    Bubble.note(p.text, p.ttlMs || 12000);
+    api.initiativeFeedback?.(p.id, 'shown');
+    // tidak ada respons dalam masa tampil = diabaikan
+    initTimer = setTimeout(() => { if (initCur?.id === p.id) { initDone('ignored'); neutralSoon(0); } }, (p.ttlMs || 12000) + 20000);
+    if (p.voice && Vol.audible()) {
+      const myTurn = ++turn;
+      setState('speaking');
+      const s = Speaker.start();
+      s.push(p.text + ' ');
+      await s.end();
+      if (myTurn === turn) backToIdle();
+    } else {
+      neutralSoon(Math.min(5000, p.ttlMs || 5000));
+    }
+  });
+  // klik bubble = ditutup (kurang diminati); mulai bicara/mengetik = tanggapan
+  aeroBub.addEventListener('click', () => initDone('dismissed'));
+  const engaged = () => initDone('engaged');
+  btnMic.addEventListener('click', engaged);
+  stage.addEventListener('click', engaged);
+  btnType.addEventListener('click', engaged);
+  typeForm.addEventListener('submit', engaged);
+  api.onHotkey(engaged);
+
+  // peringatan baterai (hanya dikirim ke pemicu; keputusan tampil tetap di mesin inisiatif)
+  (async () => {
+    try {
+      const b = await navigator.getBattery?.();
+      if (!b) return;
+      const report = () => api.initiativeEvent?.('battery', { percent: Math.round(b.level * 100), charging: b.charging });
+      b.addEventListener('levelchange', report);
+      b.addEventListener('chargingchange', report);
+      report();
+    } catch {}
+  })();
 
   // =====================================================================
   //  SAPAAN AWAL

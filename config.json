@@ -43,5 +43,14 @@
     "maxSec": 160,
     "cooldownSec": 30,
     "activityChance": 0.05
+  },
+  "initiativeModel": "gemini-flash-lite-latest",
+  "initiative": {
+    "quiet": {
+      "start": "23:00",
+      "end": "07:00"
+    },
+    "modelChance": 0.6,
+    "breakAfterMin": 90
   }
 }
